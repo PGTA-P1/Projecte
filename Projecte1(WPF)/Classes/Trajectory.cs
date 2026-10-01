@@ -16,4 +16,30 @@ namespace Projecte1_WPF_.Classes
 
         public List<TrajectorySegment> Segments { get; set; } = new List<TrajectorySegment>();
     }
+
+    internal class TrajectorySegment
+    {
+        public string PointFrom { get; set; } // 0 = climb, 1 = descent, 2 = cruise
+        public string PointTo { get; set; }
+
+        public DateTime BeginDateTime { get; set; }
+        public DateTime EndDateTime { get; set; }
+
+        public int FLBegin { get; set; }
+        public int FLEnd { get; set; }
+        public int Status { get; set; }
+
+        //Coordinates
+
+        public double LatBegin { get; set; }
+        public double LonBegin { get; set; }
+
+        public double LatEnd { get; set; }
+
+        public double LonEnd { get; set; }
+
+        public int Sequence { get; set; }
+        public double LengthNm { get; set; }
+        public int ParityColour { get; set; }
+    }
 }
