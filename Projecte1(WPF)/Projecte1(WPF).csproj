@@ -20,5 +20,10 @@
     </PackageReference>
     <PackageReference Include="NetTopologySuite" Version="2.6.0" />
   </ItemGroup>
+    <ItemGroup>
+	    <None Update="Archives\**">
+		    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	    </None>
+    </ItemGroup>
 
 </Project>

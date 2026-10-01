@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Projecte1_WPF_.Classes
 {
-    internal class Airblock
+    public class Airblock
     {
         public int NbPoints { get; set; }
         public double Latitude { get; set; }

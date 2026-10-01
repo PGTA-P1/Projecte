@@ -7,7 +7,7 @@ using System.IO;
 namespace Projecte1_WPF_.ReadData
 {
     /// Clase encargada de procesar archivos de formato .spc delimitados por punto y coma (;).
-    public class SpcReader : IFileReader<SpcFile>
+    public class SpcReader
     {
         /// Lee un archivo .spc y genera una estructura con sus metadatos y espacios aéreos.
         public SpcFile Read(string filePath)

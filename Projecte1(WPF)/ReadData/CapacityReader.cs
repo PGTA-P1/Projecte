@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace Projecte1_WPF_.ReadData
 {
     /// Clase encargada de procesar archivos CSV delimitados por punto y coma (;) para capacidades.
-    public class CapacityReader : IFileReader<CapacityFile>
+    public class CapacityReader
     {
         public CapacityFile Read(string filePath)
         {
