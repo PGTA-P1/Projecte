@@ -47,7 +47,7 @@ namespace Projecte1_WPF_
                 // For more information see https://links.esri.com/DotNetDateTime
                 ArcGISRuntimeEnvironment.EnableTimestampOffsetSupport = true;
 
-
+                // Load Default Config
 
 
             }

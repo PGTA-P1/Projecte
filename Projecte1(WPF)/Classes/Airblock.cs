@@ -1,6 +1,10 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
-namespace Projecte_1.Classes
+namespace Projecte1_WPF_.Classes
 {
     internal class Airblock
     {

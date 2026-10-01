@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 
 namespace Projecte1_WPF_.Classes
 {
-    /// Representa la estructura de un espacio aéreo principal (líneas que inician con 'A')[cite: 3].
     public class Airspace
     {
         /// Identificador único del espacio aéreo (ej. "BENELUX", "BG", "BI")[cite: 3].
@@ -26,5 +25,14 @@ namespace Projecte1_WPF_.Classes
 
         /// Lista de sub-espacios aéreos o sectores asociados (líneas 'S')[cite: 3].
         public List<Sector> Sectors { get; set; } = new List<Sector>();
+    }
+
+    public class Sector
+    {
+        /// Identificador o código del sub-espacio aéreo (ej. "EB", "BIRDCTA").
+        public string Name { get; set; }
+
+        /// Clasificación o tipo de sub-espacio (ej. "NAS", "FIR", "AUA").
+        public string Type { get; set; }
     }
 }
