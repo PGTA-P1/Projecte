@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace Projecte1_WPF_.ReadData
 {
     /// Clase encargada de procesar archivos CFG delimitados por punto y coma (;).
-    public class ConfigurationReader : IFileReader<ConfigurationFile>
+    public class ConfigurationReader
     {
         public ConfigurationFile Read(string filePath)
         {

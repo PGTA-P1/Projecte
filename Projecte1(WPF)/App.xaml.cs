@@ -3,6 +3,7 @@ using Esri.ArcGISRuntime.Http;
 using Esri.ArcGISRuntime.Mapping;
 using Esri.ArcGISRuntime.Security;
 using Esri.ArcGISRuntime.UI.Controls;
+using Projecte1_WPF_.Classes;
 using System.Configuration;
 using System.Data;
 using System.Windows;
@@ -46,9 +47,9 @@ namespace Projecte1_WPF_
                 // Enable support for TimestampOffset fields, which also changes behavior of Date fields.
                 // For more information see https://links.esri.com/DotNetDateTime
                 ArcGISRuntimeEnvironment.EnableTimestampOffsetSupport = true;
-
-                // Load Default Config
-
+                var program = new mainProgram();
+                program.LoadAirblocks();
+                new MainWindow(program).Show();
 
             }
             catch (Exception ex)

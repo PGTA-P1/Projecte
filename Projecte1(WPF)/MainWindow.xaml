@@ -28,7 +28,8 @@
                 </MenuItem>
             </Menu>
         </ToolBar>
-        <esri:SceneView Grid.Row="1"
+        <esri:SceneView x:Name="MySceneView"
+                Grid.Row="1"
                 IsAttributionTextVisible="False"
                 Scene="{Binding Scene, Source={StaticResource SceneViewModel}}" />
     </Grid>
