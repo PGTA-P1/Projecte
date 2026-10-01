@@ -45,7 +45,7 @@
             this.MenuInputs});
             this.toolStrip1.Location = new System.Drawing.Point(0, 0);
             this.toolStrip1.Name = "toolStrip1";
-            this.toolStrip1.Size = new System.Drawing.Size(800, 27);
+            this.toolStrip1.Size = new System.Drawing.Size(800, 31);
             this.toolStrip1.TabIndex = 1;
             this.toolStrip1.Text = "toolStrip1";
             // 
@@ -66,7 +66,7 @@
             this.MenuInputs.Image = ((System.Drawing.Image)(resources.GetObject("MenuInputs.Image")));
             this.MenuInputs.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.MenuInputs.Name = "MenuInputs";
-            this.MenuInputs.Size = new System.Drawing.Size(175, 24);
+            this.MenuInputs.Size = new System.Drawing.Size(175, 28);
             this.MenuInputs.Text = "Airspace Configuration";
             // 
             // defaultConfigurationToolStripMenuItem

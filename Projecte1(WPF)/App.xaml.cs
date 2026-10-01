@@ -31,6 +31,7 @@ namespace Projecte1_WPF_
              * You can set the license string by calling .UseLicense(licenseString) in the initialize call below 
              * or retrieve a license dynamically after signing into a portal:
              * ArcGISRuntimeEnvironment.SetLicense(await myArcGISPortal.GetLicenseInfoAsync()); */
+            
             try
             {
                 // Initialize the ArcGIS Maps SDK runtime before any components are created.
@@ -45,6 +46,10 @@ namespace Projecte1_WPF_
                 // Enable support for TimestampOffset fields, which also changes behavior of Date fields.
                 // For more information see https://links.esri.com/DotNetDateTime
                 ArcGISRuntimeEnvironment.EnableTimestampOffsetSupport = true;
+
+
+
+
             }
             catch (Exception ex)
             {

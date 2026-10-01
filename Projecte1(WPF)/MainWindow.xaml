@@ -11,6 +11,25 @@
         <local:SceneViewModel x:Key="SceneViewModel" />
     </Window.Resources>
     <Grid>
-        <esri:SceneView Scene="{Binding Scene, Source={StaticResource SceneViewModel}}" />
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <ToolBar Grid.Row="0" Padding="0" FontSize="11">
+            <Label Padding="4,2" VerticalAlignment="Center">Projecte P1</Label>
+            <Separator/>
+            <Menu Background="Transparent" VerticalAlignment="Center">
+                <MenuItem Header="Load Configuration" Padding="4,2">
+                    <MenuItem Header="Default Airspace"/>
+                    <Separator Opacity="0.4" Margin="0,1"/>
+                    <MenuItem Header="Load Airspace"/>
+                    <Separator Opacity="0.4" Margin="0,1"/>
+                    <MenuItem Header="Load Trajectories"/>
+                </MenuItem>
+            </Menu>
+        </ToolBar>
+        <esri:SceneView Grid.Row="1"
+                IsAttributionTextVisible="False"
+                Scene="{Binding Scene, Source={StaticResource SceneViewModel}}" />
     </Grid>
 </Window>
