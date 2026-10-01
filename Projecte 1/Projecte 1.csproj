@@ -71,6 +71,10 @@
       <AutoGen>True</AutoGen>
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
+    <None Include="Archives\20160728Initial_initial.so6" />
+    <None Include="Archives\Airspace_1608.spc" />
+    <None Include="Archives\capacity_sector_level.csv" />
+    <None Include="Archives\Configuration_1608.cfg" />
     <None Include="Archives\sectors_1608.are" />
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
