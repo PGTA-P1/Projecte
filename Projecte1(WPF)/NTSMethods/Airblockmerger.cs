@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Geometries.Utilities;
 using NetTopologySuite.Operation.Union;
@@ -11,58 +10,61 @@ using Projecte1_WPF_.Classes;
 
 namespace Projecte1_WPF_.NTS
 {
-    /// <summary>
-    /// Airblocks of one elementary sector fused into a single outline, for one level band.
-    /// Only the outer boundary of each resulting polygon is kept.
-    /// </summary>
+    // Airblocks of one elementary sector fused into a single outline, for one level band
     public class MergedAirblocks
     {
         public string Name { get; set; }
-        public int BottomLevel { get; set; }   // FL
-        public int TopLevel { get; set; }      // FL
+        public int BottomLevel { get; set; }
+        public int TopLevel { get; set; }
 
-        // One closed outer ring per resulting polygon, as (Latitude, Longitude) in decimal degrees
+        // One closed outer ring per resulting polygon, as (Latitude, Longitude) in degrees
         public List<List<(double Latitude, double Longitude)>> OuterRings { get; } =
             new List<List<(double Latitude, double Longitude)>>();
     }
 
     public static class AirblockMerger
     {
-        // Simplification tolerance in degrees (0.002 deg ~ 220 m). Use 0 to keep every vertex.
+        // Simplification tolerance in degrees (0.002 deg ~ 220 m). 0 keeps every vertex.
         public const double DEFAULT_SIMPLIFY_DEG = 0.002;
 
         private static readonly GeometryFactory Factory = new GeometryFactory();
 
-        /// <summary>
-        /// Fuses the airblocks of an elementary sector. Volumes are grouped by (BottomLevel, TopLevel),
-        /// because one outline cannot have different vertical limits. Sign '+' adds a volume, '-' subtracts it.
-        /// </summary>
-        public static List<MergedAirblocks> Merge(
-            ElementarySectors sector,
-            IEnumerable<Airblock> airblocks,
-            double simplifyToleranceDeg = DEFAULT_SIMPLIFY_DEG)
+        // One result per different (BottomLevel, TopLevel) of the sector, since an outline has a single height range
+        public static List<MergedAirblocks> Merge(ElementarySectors sector, List<Airblock> airblocks,
+                                                  double tolerance = DEFAULT_SIMPLIFY_DEG)
         {
             var result = new List<MergedAirblocks>();
+            int n = sector.Volumes.Count;
+            bool[] used = new bool[n];
 
-            foreach (var band in sector.Volumes.GroupBy(v => (v.BottomLevel, v.TopLevel)))
+            for (int i = 0; i < n; i++)
             {
+                if (used[i])
+                    continue;
+
+                int bottom = sector.Volumes[i].BottomLevel;
+                int top = sector.Volumes[i].TopLevel;
                 var plus = new List<Geometry>();
                 var minus = new List<Geometry>();
 
-                foreach (var vol in band)
+                for (int j = i; j < n; j++)
                 {
-                    // Linear search: simple, and fast enough for the few sectors shown at a time
-                    Airblock block = airblocks.FirstOrDefault(a =>
-                        string.Equals(a.Name, vol.VolumeName, StringComparison.OrdinalIgnoreCase));
+                    SectorVolume vol = sector.Volumes[j];
+                    if (used[j] || vol.BottomLevel != bottom || vol.TopLevel != top)
+                        continue;
+                    used[j] = true;
 
-                    Polygon poly = ToNtsPolygon(block);
+                    Polygon poly = ToPolygon(FindAirblock(airblocks, vol.VolumeName));
                     if (poly == null)
                     {
                         Debug.WriteLine($"[AirblockMerger] '{sector.Name}': airblock '{vol.VolumeName}' missing or invalid.");
                         continue;
                     }
 
-                    (vol.Sign == '-' ? minus : plus).Add(poly);
+                    if (vol.Sign == '-')
+                        minus.Add(poly);
+                    else
+                        plus.Add(poly);
                 }
 
                 if (plus.Count == 0)
@@ -72,20 +74,23 @@ namespace Projecte1_WPF_.NTS
                 if (minus.Count > 0)
                     merged = merged.Difference(UnaryUnionOp.Union(minus));
 
-                // Drop vertices that do not change the shape noticeably
-                if (simplifyToleranceDeg > 0 && !merged.IsEmpty)
-                    merged = TopologyPreservingSimplifier.Simplify(merged, simplifyToleranceDeg);
+                if (tolerance > 0 && !merged.IsEmpty)
+                    merged = TopologyPreservingSimplifier.Simplify(merged, tolerance);
 
-                var fused = new MergedAirblocks
+                var fused = new MergedAirblocks { Name = sector.Name, BottomLevel = bottom, TopLevel = top };
+
+                // The union can give several separate polygons; only the outer ring of each is kept
+                foreach (Geometry g in PolygonExtracter.GetPolygons(merged))
                 {
-                    Name = sector.Name,
-                    BottomLevel = band.Key.BottomLevel,
-                    TopLevel = band.Key.TopLevel
-                };
+                    Polygon p = (Polygon)g;
+                    if (p.IsEmpty)
+                        continue;
 
-                // The union can be several disjoint polygons; keep the outer ring of each (holes are ignored)
-                foreach (Polygon p in PolygonExtracter.GetPolygons(merged).Cast<Polygon>().Where(p => !p.IsEmpty))
-                    fused.OuterRings.Add(p.ExteriorRing.Coordinates.Select(c => (c.Y, c.X)).ToList());
+                    var ring = new List<(double Latitude, double Longitude)>();
+                    foreach (Coordinate c in p.ExteriorRing.Coordinates)
+                        ring.Add((c.Y, c.X));
+                    fused.OuterRings.Add(ring);
+                }
 
                 if (fused.OuterRings.Count > 0)
                     result.Add(fused);
@@ -94,10 +99,20 @@ namespace Projecte1_WPF_.NTS
             return result;
         }
 
-        // NTS convention: X = longitude, Y = latitude
-        private static Polygon ToNtsPolygon(Airblock airblock)
+        private static Airblock FindAirblock(List<Airblock> airblocks, string name)
         {
-            if (airblock?.Vertices == null || airblock.Vertices.Count < 3)
+            for (int i = 0; i < airblocks.Count; i++)
+            {
+                if (string.Equals(airblocks[i].Name, name, StringComparison.OrdinalIgnoreCase))
+                    return airblocks[i];
+            }
+            return null;
+        }
+
+        // NTS uses X = longitude, Y = latitude
+        private static Polygon ToPolygon(Airblock airblock)
+        {
+            if (airblock == null || airblock.Vertices.Count < 3)
                 return null;
 
             var coords = new List<Coordinate>();
@@ -109,17 +124,24 @@ namespace Projecte1_WPF_.NTS
             }
 
             if (!coords[0].Equals2D(coords[coords.Count - 1]))
-                coords.Add(coords[0].Copy());   // close the ring
+                coords.Add(coords[0].Copy());
 
             if (coords.Count < 4)
                 return null;
 
             Polygon poly = Factory.CreatePolygon(coords.ToArray());
 
-            // A self-intersecting ring would make the union throw; Buffer(0) repairs most cases
+            // Buffer(0) repairs a self-intersecting ring; keep its biggest piece
             if (!poly.IsValid)
-                poly = PolygonExtracter.GetPolygons(poly.Buffer(0)).Cast<Polygon>()
-                                       .OrderByDescending(p => p.Area).FirstOrDefault();
+            {
+                Polygon biggest = null;
+                foreach (Geometry g in PolygonExtracter.GetPolygons(poly.Buffer(0)))
+                {
+                    if (biggest == null || g.Area > biggest.Area)
+                        biggest = (Polygon)g;
+                }
+                poly = biggest;
+            }
 
             return poly == null || poly.IsEmpty ? null : poly;
         }
