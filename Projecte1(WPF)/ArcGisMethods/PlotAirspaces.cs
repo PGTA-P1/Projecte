@@ -9,107 +9,107 @@ using Esri.ArcGISRuntime.Mapping;
 using Esri.ArcGISRuntime.Symbology;
 using Esri.ArcGISRuntime.UI;
 using Esri.ArcGISRuntime.UI.Controls;
-using Projecte1_WPF_.Classes;
+using Projecte1_WPF_.NTS;
 
 namespace Projecte1_WPF_.ArcGisMethods
 {
-    public static class PlotAirspaces
+    /// <summary>Common interface so the 3D and a future 2D plotter can be switched without changing the callers.</summary>
+    public interface IAirspacePlotter
     {
-        private const string OverlayId = "airspaces";
+        Task PlotAsync(IEnumerable<MergedAirblocks> sectors, bool zoomTo = true);
+        void Remove(string sectorName);
+        void Clear();
+    }
 
-        // Flight level (hundreds of feet) -> metres.
-        // Not used while the heights are fixed; restore it when real levels are available.
-        // private const double FL_TO_M = 100 * 0.3048;
+    /// <summary>Draws fused elementary sectors as extruded prisms in a SceneView.</summary>
+    public class PlotAirspaces3D : IAirspacePlotter
+    {
+        // Flight level (hundreds of feet) -> metres
+        private const double FL_TO_M = 100 * 0.3048;
 
-        public static async Task PlotAirblock(SceneView sceneView, Airblock airblock, bool zoomTo = true)
+        // FL999 means "no upper limit"; cap it so the prism stays a sensible height (FL600 ~ 18 km)
+        private const int MAX_VISIBLE_FL = 600;
+
+        private readonly SceneView _sceneView;
+        private readonly GraphicsOverlay _overlay;
+
+        public PlotAirspaces3D(SceneView sceneView)
         {
-            if (airblock?.Vertices == null || airblock.Vertices.Count < 3)
+            _sceneView = sceneView;
+
+            // Absolute placement: Z is metres above sea level, not above the terrain
+            _overlay = new GraphicsOverlay
             {
-                Debug.WriteLine($"[PlotAirspaces] '{airblock?.Name}' skipped: fewer than 3 vertices.");
-                return;
-            }
+                SceneProperties = new LayerSceneProperties(SurfacePlacement.Absolute)
+            };
 
-            // Temporary: no Z defined yet, so every sector goes from the ground to 10 km.
-            // When real levels are available, use:
-            //   double bottomM = airblock.BottomLevel * FL_TO_M;
-            //   double topM = airblock.TopLevel * FL_TO_M;
-            double bottomM = 0;
-            double topM = 10_000;
-            double heightM = Math.Max(topM - bottomM, 1);
+            var fill = new SimpleFillSymbol(
+                SimpleFillSymbolStyle.Solid,
+                Color.FromArgb(120, 0, 120, 255),
+                new SimpleLineSymbol(SimpleLineSymbolStyle.Solid, Color.White, 1));
 
-            // Vertices are (Latitude, Longitude) in decimal degrees (WGS84).
-            // Drop the closing vertex if it repeats the first one.
-            var verts = new List<(double Latitude, double Longitude)>(airblock.Vertices);
-            if (verts.Count > 3 && verts[0].Equals(verts[verts.Count - 1]))
-                verts.RemoveAt(verts.Count - 1);
+            // Extrude upward from the base by the value of the "height" attribute
+            var renderer = new SimpleRenderer(fill);
+            renderer.SceneProperties.ExtrusionMode = ExtrusionMode.BaseHeight;
+            renderer.SceneProperties.ExtrusionExpression = "[height]";
+            _overlay.Renderer = renderer;
 
-            // Sanity check: everything must be valid decimal degrees.
-            if (verts.Any(v => double.IsNaN(v.Latitude) || double.IsNaN(v.Longitude)
-                            || Math.Abs(v.Latitude) > 90 || Math.Abs(v.Longitude) > 180))
+            _sceneView.GraphicsOverlays.Add(_overlay);
+        }
+
+        public async Task PlotAsync(IEnumerable<MergedAirblocks> sectors, bool zoomTo = true)
+        {
+            var list = sectors.ToList();
+            var plotted = new List<Geometry>();
+
+            // Replotting a sector replaces it instead of duplicating it
+            foreach (string name in list.Select(s => s.Name).Distinct())
+                Remove(name);
+
+            foreach (var sector in list)
             {
-                Debug.WriteLine($"[PlotAirspaces] '{airblock.Name}' skipped: coordinates out of range. " +
-                                $"First vertex (lat,lon) = ({verts[0].Latitude}, {verts[0].Longitude}). " +
-                                "They are probably not decimal degrees, or lat/lon are swapped in the reader.");
-                return;
-            }
+                double bottomM = sector.BottomLevel * FL_TO_M;
+                double topM = Math.Min(sector.TopLevel, MAX_VISIBLE_FL) * FL_TO_M;
+                double heightM = Math.Max(topM - bottomM, 1);
 
-            // MapPoint takes x = longitude, y = latitude
-            var builder = new PolygonBuilder(SpatialReferences.Wgs84);
-            foreach (var v in verts)
-                builder.AddPoint(new MapPoint(v.Longitude, v.Latitude, bottomM, SpatialReferences.Wgs84));
-
-            // Simplify fixes ring orientation and self-intersections
-            Geometry simplified = GeometryEngine.Simplify(builder.ToGeometry());
-            if (!(simplified is Polygon polygon) || polygon.IsEmpty)
-            {
-                Debug.WriteLine($"[PlotAirspaces] '{airblock.Name}' skipped: invalid or empty polygon.");
-                return;
-            }
-
-            Debug.WriteLine(
-                $"[PlotAirspaces] '{airblock.Name}' n={verts.Count} " +
-                $"first(lat,lon)=({verts[0].Latitude}, {verts[0].Longitude}) " +
-                $"extent X[{polygon.Extent.XMin:F3},{polygon.Extent.XMax:F3}] " +
-                $"Y[{polygon.Extent.YMin:F3},{polygon.Extent.YMax:F3}]");
-
-            // One shared overlay for all airblocks
-            var overlay = sceneView.GraphicsOverlays.FirstOrDefault(o => o.Id == OverlayId);
-            if (overlay == null)
-            {
-                overlay = new GraphicsOverlay
+                foreach (var ring in sector.OuterRings)
                 {
-                    Id = OverlayId,
-                    // Absolute placement: Z is metres above sea level, not above the terrain
-                    SceneProperties = new LayerSceneProperties(SurfacePlacement.Absolute)
-                };
+                    var builder = new PolygonBuilder(SpatialReferences.Wgs84);
+                    foreach (var v in ring)
+                        builder.AddPoint(new MapPoint(v.Longitude, v.Latitude, bottomM, SpatialReferences.Wgs84));
 
-                var fill = new SimpleFillSymbol(
-                    SimpleFillSymbolStyle.Solid,
-                    Color.FromArgb(120, 0, 120, 255),
-                    new SimpleLineSymbol(SimpleLineSymbolStyle.Solid, Color.White, 1));
+                    // Simplify fixes ring orientation and self-intersections
+                    if (!(GeometryEngine.Simplify(builder.ToGeometry()) is Polygon polygon) || polygon.IsEmpty)
+                    {
+                        Debug.WriteLine($"[PlotAirspaces3D] '{sector.Name}' skipped: invalid polygon.");
+                        continue;
+                    }
 
-                // Extrude upward from the base by the value of the "height" attribute
-                var renderer = new SimpleRenderer(fill);
-                renderer.SceneProperties.ExtrusionMode = ExtrusionMode.BaseHeight;
-                renderer.SceneProperties.ExtrusionExpression = "[height]";
-                overlay.Renderer = renderer;
-
-                sceneView.GraphicsOverlays.Add(overlay);
+                    // Densify so long edges follow the Earth's curvature instead of cutting under the surface
+                    var graphic = new Graphic(GlobeHelper.Densify(polygon));
+                    graphic.Attributes["height"] = heightM;
+                    graphic.Attributes["name"] = sector.Name;
+                    _overlay.Graphics.Add(graphic);
+                    plotted.Add(polygon);
+                }
             }
 
-            var graphic = new Graphic(polygon);
-            graphic.Attributes["height"] = heightM;
-            graphic.Attributes["name"] = airblock.Name;
-            overlay.Graphics.Add(graphic);
+            Debug.WriteLine($"[PlotAirspaces3D] {plotted.Count} polygons added, {_overlay.Graphics.Count} on screen.");
 
-            if (zoomTo)
+            if (zoomTo && plotted.Count > 0)
             {
-                // Camera from the south with a tilt, scaled to the size of the sector
-                MapPoint c = polygon.Extent.GetCenter();
-                double latOffset = Math.Max(polygon.Extent.Height * 1.5, 0.5);            // degrees
-                double altitude = Math.Max(polygon.Extent.Height * 111_000 * 2, 200_000); // metres
-                await sceneView.SetViewpointCameraAsync(new Camera(c.Y - latOffset, c.X, altitude, 0, 60, 0));
+                Envelope extent = GeometryEngine.CombineExtents(plotted);
+                if (extent != null)
+                    await GlobeHelper.FlyTo(_sceneView, extent);
             }
         }
+
+        public void Remove(string sectorName)
+        {
+            foreach (var g in _overlay.Graphics.Where(g => (string)g.Attributes["name"] == sectorName).ToList())
+                _overlay.Graphics.Remove(g);
+        }
+
+        public void Clear() => _overlay.Graphics.Clear();
     }
 }
