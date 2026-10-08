@@ -16,7 +16,7 @@ namespace Projecte1_WPF_.ArcGisMethods
     /// <summary>Common interface so the 3D and a future 2D plotter can be switched without changing the callers.</summary>
     public interface IAirspacePlotter
     {
-        Task PlotAsync(IEnumerable<MergedAirblocks> sectors, bool zoomTo = true);
+        Task PlotAsync(IEnumerable<IMergedSector> sectors, bool zoomTo = true);
         void Remove(string sectorName);
         void Clear();
     }
@@ -33,7 +33,10 @@ namespace Projecte1_WPF_.ArcGisMethods
         private readonly SceneView _sceneView;
         private readonly GraphicsOverlay _overlay;
 
-        public PlotAirspaces3D(SceneView sceneView)
+        // Default blue. Pass another colour to draw a second, independent group (e.g. collapsed sectors)
+        public PlotAirspaces3D(SceneView sceneView) : this(sceneView, Color.FromArgb(120, 0, 120, 255)) { }
+
+        public PlotAirspaces3D(SceneView sceneView, Color fillColor)
         {
             _sceneView = sceneView;
 
@@ -45,7 +48,7 @@ namespace Projecte1_WPF_.ArcGisMethods
 
             var fill = new SimpleFillSymbol(
                 SimpleFillSymbolStyle.Solid,
-                Color.FromArgb(120, 0, 120, 255),
+                fillColor,
                 new SimpleLineSymbol(SimpleLineSymbolStyle.Solid, Color.White, 1));
 
             // Extrude upward from the base by the value of the "height" attribute
@@ -57,7 +60,7 @@ namespace Projecte1_WPF_.ArcGisMethods
             _sceneView.GraphicsOverlays.Add(_overlay);
         }
 
-        public async Task PlotAsync(IEnumerable<MergedAirblocks> sectors, bool zoomTo = true)
+        public async Task PlotAsync(IEnumerable<IMergedSector> sectors, bool zoomTo = true)
         {
             var list = sectors.ToList();
             var plotted = new List<Geometry>();

@@ -50,6 +50,8 @@ namespace Projecte1_WPF_
                 var program = new mainProgram();
                 program.LoadAirblocks();
                 program.LoadElementary();
+                program.LoadCollapsed();
+                program.LoadConfiguration();
                 new MainWindow(program).Show();
 
             }

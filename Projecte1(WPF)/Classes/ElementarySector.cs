@@ -22,12 +22,12 @@ namespace Projecte1_WPF.Classes
             TopLevel = topLevel;
         }
     }
-    public class ElementarySectors
+    public class ElementarySector
     {
         public string Name { get; set; }
         public List<SectorVolume> Volumes { get; set; }
 
-        public ElementarySectors(string name)
+        public ElementarySector(string name)
         {
             Name = name;
             Volumes = new List<SectorVolume>();
