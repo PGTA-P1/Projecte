@@ -9,56 +9,88 @@ namespace TuProyecto
     {
         static void Main(string[] args)
         {
-            // 1. Obtener la ruta dinámica de la carpeta Archives
-            // Subimos 3 niveles desde el ejecutable (bin/Debug/netX.0) hasta la raíz del proyecto
+            // 1. Obtener la ruta dinámica a la carpeta Archives
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            string projectDir = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\"));
+            string projectDir = Path.GetFullPath(Path.Combine(baseDir, @"..\..\"));
             string archivesDir = Path.Combine(projectDir, "Archives");
 
-            // 2. Definir las rutas exactas de los archivos combinando el directorio con el nombre
+            // 2. Definir las rutas de los archivos
             string capacityPath = Path.Combine(archivesDir, "capacity_sector_level.csv");
-            string configPath = Path.Combine(archivesDir, "Configuration_1608_2.cfg");
+            string configPath = Path.Combine(archivesDir, "Configuration_1608.cfg");
             string spcPath = Path.Combine(archivesDir, "Airspace_1608.spc");
 
-            Console.WriteLine("=== INICIANDO CARGA DE DATOS ===\n");
-            Console.WriteLine($"Buscando archivos en: {archivesDir}\n");
+            Console.WriteLine("==================================================");
+            Console.WriteLine("          INICIANDO CARGA Y MUESTRA DE DATOS");
+            Console.WriteLine("==================================================\n");
 
-            // 3. Procesar los archivos utilizando el método genérico
-            ProcessFile("Capacidad", capacityPath, new CapacityReader(),
-                file => file.Capacities.Count);
+            // 3. Procesar y mostrar cada archivo
 
-            ProcessFile("Configuración", configPath, new ConfigurationReader(),
-                file => file.Configurations.Count);
+            // --- ARCHIVO 1: Capacidad (.csv) ---
+            ProcessFile("CAPACIDAD (CSV)", capacityPath, new CapacityReader(), file =>
+            {
+                Console.WriteLine($"Total de registros leídos: {file.Capacities.Count}\n");
+                foreach (var cap in file.Capacities)
+                {
+                    Console.WriteLine($"  • Sector: {cap.SectorName,-15} | Capacidad Horaria: {cap.HourlyCapacity}");
+                }
+            });
 
-            ProcessFile("SPC", spcPath, new SpcReader(),
-                file => file.SpcRecords.Count);
+            // --- ARCHIVO 2: Configuración (.cfg) ---
+            ProcessFile("CONFIGURACIÓN (CFG)", configPath, new ConfigurationReader(), file =>
+            {
+                Console.WriteLine($"Total de registros leídos: {file.Configurations.Count}\n");
+                foreach (var cfg in file.Configurations)
+                {
+                    Console.WriteLine($"  • ACC: {cfg.AccName,-8} | Config: {cfg.ConfigurationName,-15} | Sector: {cfg.SectorName}");
+                }
+            });
 
-            Console.WriteLine("\n=== CARGA DE DATOS FINALIZADA ===");
+            // --- ARCHIVO 3: Espacio Aéreo (.spc) ---
+            ProcessFile("ESPACIO AÉREO (SPC)", spcPath, new SpcReader(), file =>
+            {
+                Console.WriteLine("--- METADATOS DEL ARCHIVO ---");
+                Console.WriteLine($"  Tipo: {file.Metadata.FileType} | Versión: {file.Metadata.Version} | AIRAC: {file.Metadata.AiracCycle}");
+                Console.WriteLine($"  Fechas: {file.Metadata.StartDate:yyyy-MM-dd} a {file.Metadata.EndDate:yyyy-MM-dd}");
+                Console.WriteLine($"  Registros declarados: {file.Metadata.RecordCount} | Fuente: {file.Metadata.DataSource}");
+
+                Console.WriteLine($"\n--- ESPACIOS AÉREOS Y SECTORES ({file.Airspaces.Count} principales) ---\n");
+                foreach (var airspace in file.Airspaces)
+                {
+                    Console.WriteLine($"  [A] ID: {airspace.Id,-10} | Nombre: {airspace.Name,-30} | Tipo: {airspace.Type,-6} | Sectors: {airspace.SubAirspacesCount,-6} | Cat: {airspace.Category}");
+                    foreach (var sector in airspace.Sectors)
+                    {
+                        Console.WriteLine($"      └─ [S] Sector: {sector.Name,-15} | Tipo: {sector.Type}");
+                    }
+                }
+            });
+
+            Console.WriteLine("==================================================");
+            Console.WriteLine("          CARGA FINALIZADA CON ÉXITO");
+            Console.WriteLine("==================================================");
             Console.WriteLine("Pulsa Enter para salir...");
             Console.ReadLine();
         }
 
-        /// Método genérico para procesar cualquier archivo que implemente IFileReader.
-        static void ProcessFile<T>(string fileTypeName, string filePath, IFileReader<T> reader, Func<T, int> getRecordCount)
+        /// Método genérico que lee un archivo e invoca una acción personalizada para imprimir su contenido.
+        static void ProcessFile<T>(string fileTypeName, string filePath, IFileReader<T> reader, Action<T> printAction)
         {
-            Console.WriteLine($"[Procesando {fileTypeName}] ...");
+            Console.WriteLine($">>> PROCESANDO: {fileTypeName} <<<\n");
 
             try
             {
                 T fileData = reader.Read(filePath);
-                int count = getRecordCount(fileData);
-
-                Console.WriteLine($"  -> Éxito: Se han cargado {count} registros.\n");
+                printAction(fileData);
             }
             catch (FileNotFoundException ex)
             {
-                // Ahora el error te mostrará exactamente la ruta donde está intentando buscar el archivo
-                Console.WriteLine($"  -> Error: No se encontró el archivo.\n     Ruta buscada: {ex.FileName ?? filePath}\n");
+                Console.WriteLine($"  [ERROR] No se encontró el archivo.\n          Ruta buscada: {ex.FileName ?? filePath}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"  -> Error inesperado al leer {fileTypeName}: {ex.Message}\n");
+                Console.WriteLine($"  [ERROR INESPERADO]: {ex.Message}");
             }
+
+            Console.WriteLine("\n" + new string('-', 70) + "\n");
         }
     }
 }

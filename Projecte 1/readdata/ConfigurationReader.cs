@@ -8,40 +8,43 @@ using System.Threading.Tasks;
 
 namespace Projecte_1.ReadData
 {
-    /// Clase encargada de procesar archivos CFG delimitados por punto y coma (;).
     public class ConfigurationReader : IFileReader<ConfigurationFile>
     {
-        public ConfigurationFile Read(string filePath)
+        private readonly AccsReader _accsReader = new AccsReader();
+
+        public ConfigurationFile Read(string configFilePath)
         {
-            if (!File.Exists(filePath))
-            {
-                throw new FileNotFoundException($"No se encontró el archivo: {filePath}");
-            }
+            if (!File.Exists(configFilePath))
+                throw new FileNotFoundException($"No se encontró el archivo: {configFilePath}");
+
+            // AccsReader ya resuelve por sí mismo la ruta de accs.txt
+            HashSet<string> targetAccs = _accsReader.ReadAccs();
 
             var result = new ConfigurationFile();
 
-            foreach (var rawLine in File.ReadLines(filePath))
+            foreach (var rawLine in File.ReadLines(configFilePath))
             {
                 var line = rawLine.Trim();
 
-                // Omitir líneas vacías o la cabecera de metadatos (que empieza por '#')
                 if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#"))
                     continue;
 
-                // Separar por punto y coma
                 var parts = line.Split(';');
-
-                // Verificar que existen al menos las 3 columnas esperadas
                 if (parts.Length >= 3)
                 {
-                    var record = new ConfigurationRecord
+                    string accName = parts[0].Trim();
+                    //Console.WriteLine(accName);
+
+                    // FILTRO AL VUELO: Ignora líneas cuyo ACC no esté en accs.txt
+                    if (targetAccs.Count > 0 && !targetAccs.Contains(accName))
+                        continue;
+
+                    result.Configurations.Add(new ConfigurationRecord
                     {
-                        AccName = parts[0].Trim(),
+                        AccName = accName,
                         ConfigurationName = parts[1].Trim(),
                         SectorName = parts[2].Trim()
-                    };
-
-                    result.Configurations.Add(record);
+                    });
                 }
             }
 

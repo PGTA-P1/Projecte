@@ -11,12 +11,16 @@ namespace Projecte_1.ReadData
     /// Clase encargada de procesar archivos CSV delimitados por punto y coma (;) para capacidades.
     public class CapacityReader : IFileReader<CapacityFile>
     {
+        private readonly AccsReader _accsReader = new AccsReader();
         public CapacityFile Read(string filePath)
         {
             if (!File.Exists(filePath))
             {
                 throw new FileNotFoundException($"No se encontró el archivo: {filePath}");
             }
+
+            // AccsReader ya resuelve por sí mismo la ruta de accs.txt
+            HashSet<string> targetAccs = _accsReader.ReadAccs();
 
             var result = new CapacityFile();
             bool isFirstLine = true;
@@ -40,15 +44,21 @@ namespace Projecte_1.ReadData
                 var parts = line.Split(';');
                 if (parts.Length >= 2)
                 {
-                    var record = new CapacityRecord
+                    string sectorName = parts[0].Trim();
+                    //Console.WriteLine(accName);
+
+                    // FILTRO AL VUELO: Ignora líneas cuyo ACC no esté en accs.txt
+                    if (targetAccs.Count > 0 && !targetAccs.Contains(sectorName))
+                        continue;
+
+                    result.Capacities.Add(new CapacityRecord
                     {
-                        SectorName = parts[0].Trim(),
+                        SectorName = sectorName,
                         // Intentar parsear el número; si falla (por ej. formato incorrecto), asigna 0
                         HourlyCapacity = int.TryParse(parts[1].Trim(), out int cap) ? cap : 0
-                    };
-
-                    result.Capacities.Add(record);
+                    });
                 }
+
             }
 
             return result;
