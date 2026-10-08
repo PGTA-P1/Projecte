@@ -1,12 +1,10 @@
-﻿using System.Collections.Generic;
-using System.Diagnostics;
-using System.Drawing;
-using System.Windows;
-using Esri.ArcGISRuntime.Mapping;
-using Projecte1_WPF.Classes;
+﻿using Esri.ArcGISRuntime.Mapping;
 using Projecte1_WPF_.ArcGisMethods;
 using Projecte1_WPF_.Classes;
 using Projecte1_WPF_.NTS;
+using System.Diagnostics;
+using System.Drawing;
+using System.Windows;
 
 namespace Projecte1_WPF_
 {
