@@ -10,9 +10,6 @@ using Projecte1_WPF_.NTS;
 
 namespace Projecte1_WPF_
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
     public partial class MainWindow : Window
     {
         // TEST: configuration to draw = ACC + configuration name of the .cfg (e.g. "LEBLTMA" + "2AE", "EBBUCTA" + "C3EW1").
