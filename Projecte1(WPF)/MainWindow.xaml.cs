@@ -12,8 +12,8 @@ namespace Projecte1_WPF_
     {
         // TEST: configuration to draw = ACC + configuration name of the .cfg (e.g. "LEBLTMA" + "2AE", "EBBUCTA" + "C3EW1").
         // Use "" in TEST_CONFIG to take the first configuration of the .cfg.
-        private const string TEST_ACC = "LEBLTMA";
-        private const string TEST_CONFIG = "9AW";
+        private const string TEST_ACC = "LEMGTMA";
+        private const string TEST_CONFIG = "CONF2S";
 
         // Elementary and collapsed sectors are drawn by two plotters (one overlay each): independent, never merged together
         private readonly IAirspacePlotter _elementaryPlotter;
