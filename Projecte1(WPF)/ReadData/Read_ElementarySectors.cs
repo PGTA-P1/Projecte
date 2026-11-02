@@ -12,7 +12,8 @@ namespace Projecte1_WPF_.ReadData
     {
         // Line format: SECTOR_NAME [+|-] VOLUME_NAME bottomFL topFL
         // The lines of one sector are consecutive in the file, so they are grouped without any lookup table.
-        public static List<ElementarySector> LoadFromFile(string filePath)
+        // keep: if not null, only sectors whose name is in the set are stored (null = load everything)
+        public static List<ElementarySector> LoadFromFile(string filePath, HashSet<string> keep = null)
         {
             var sectors = new List<ElementarySector>();
 
@@ -44,6 +45,9 @@ namespace Projecte1_WPF_.ReadData
                     continue; // invalid line
 
                 string sectorName = string.Join(" ", t.Take(nameEnd + 1));
+
+                if (keep != null && !keep.Contains(sectorName))
+                    continue; // not needed
 
                 // Same name as the previous line -> same sector; otherwise start a new one
                 ElementarySector current = sectors.Count > 0 ? sectors[sectors.Count - 1] : null;

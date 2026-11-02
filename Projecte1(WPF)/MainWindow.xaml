@@ -6,7 +6,7 @@
         xmlns:esri="http://schemas.esri.com/arcgis/runtime/2013"
         xmlns:local="clr-namespace:Projecte1_WPF_"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        Title="Projecte P1 - Trajectory entries and sector demand" Height="800" Width="1280" WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <local:SceneViewModel x:Key="SceneViewModel" />
     </Window.Resources>
@@ -14,23 +14,73 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <ToolBar Grid.Row="0" Padding="0" FontSize="11">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <ToolBar Grid.Row="0" Grid.ColumnSpan="2" Padding="0" FontSize="11">
             <Label Padding="4,2" VerticalAlignment="Center">Projecte P1</Label>
             <Separator/>
             <Menu Background="Transparent" VerticalAlignment="Center">
-                <MenuItem Header="Load Configuration" Padding="4,2">
-                    <MenuItem Header="Default Airspace"/>
+                <MenuItem Header="Load Data" Padding="4,2">
+                    <MenuItem x:Name="DefaultDataItem" Header="Default data (Archives folder)" Click="LoadDefaultData_Click"/>
                     <Separator Opacity="0.4" Margin="0,1"/>
-                    <MenuItem Header="Load Airspace"/>
-                    <Separator Opacity="0.4" Margin="0,1"/>
-                    <MenuItem Header="Load Trajectories"/>
+                    <MenuItem Header="Your own files..." IsEnabled="False" ToolTip="Not available yet" ToolTipService.ShowOnDisabled="True"/>
+                </MenuItem>
+                <MenuItem x:Name="ChecksMenu" Header="Checks" Padding="4,2" IsEnabled="False">
+                    <MenuItem Header="ACC filter" Click="CheckFilter_Click"/>
+                    <MenuItem Header="Crossings of sample flights" Click="CheckCrossings_Click"/>
                 </MenuItem>
             </Menu>
+            <Separator/>
+            <!-- Wrapped so the ToolBar does not give it its flat style: a normal button reads as the main action. Enabled once the data is ready -->
+            <Grid>
+                <Button x:Name="StartSimBTN" Content="Start simulation" FontSize="12" Padding="10,2" Margin="4,1"
+                        IsEnabled="False" Click="StartSimulation_Click" />
+            </Grid>
+            <Separator/>
+            <TextBlock x:Name="StatusText" Margin="6,0" VerticalAlignment="Center" FontSize="12" Foreground="#FF404040"
+                       Text="No data loaded. Use Load Data > Default data." />
         </ToolBar>
+
         <esri:SceneView x:Name="MySceneView"
-                Grid.Row="1"
+                Grid.Row="1" Grid.Column="0"
                 IsAttributionTextVisible="False"
                 Scene="{Binding Scene, Source={StaticResource SceneViewModel}}" />
+
+        <!-- Results of the Checks menu; hidden until a check runs -->
+        <Border x:Name="CheckPanel" Grid.Row="1" Grid.Column="1" Width="460" Visibility="Collapsed"
+                BorderBrush="#FFD5DFE5" BorderThickness="1,0,0,0" Background="White">
+            <DockPanel>
+                <Grid DockPanel.Dock="Top" Background="#FFEEF5FD">
+                    <TextBlock x:Name="CheckTitle" Margin="8,6" VerticalAlignment="Center" FontWeight="SemiBold" />
+                    <Button Content="Close" HorizontalAlignment="Right" Margin="6,4" Padding="8,1" Click="CloseCheck_Click" />
+                </Grid>
+                <TextBox x:Name="CheckText" IsReadOnly="True" BorderThickness="0" Padding="6" FontFamily="Consolas" FontSize="11"
+                         TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
+            </DockPanel>
+        </Border>
+
+        <!-- Timeline: relevant trajectories played in time order; hidden until there is something to simulate -->
+        <Border x:Name="TimelineBar" Grid.Row="2" Grid.ColumnSpan="2" Visibility="Collapsed"
+                BorderBrush="#FFD5DFE5" BorderThickness="0,1,0,0" Background="#FFEEF5FD">
+            <Grid Margin="6,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="PlayBTN" Grid.Column="0" Content="Play" MinWidth="60" Padding="8,2" Click="PlayBTN_Click" />
+                <ComboBox x:Name="SpeedBox" Grid.Column="1" Margin="6,0" MinWidth="70" SelectionChanged="SpeedBox_SelectionChanged" />
+                <Slider x:Name="TimeSlider" Grid.Column="2" Margin="6,0" VerticalAlignment="Center" ValueChanged="TimeSlider_ValueChanged" />
+                <TextBlock x:Name="TimeText" Grid.Column="3" Margin="6,0" VerticalAlignment="Center" FontFamily="Consolas" />
+                <TextBlock x:Name="AirText" Grid.Column="4" MinWidth="230" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
     </Grid>
 </Window>

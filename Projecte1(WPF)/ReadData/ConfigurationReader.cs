@@ -11,7 +11,8 @@ namespace Projecte1_WPF_.ReadData
     /// the elementary list or the collapsed list of its configuration. The two lists are independent.
     public class ConfigurationReader
     {
-        public ConfigurationList Read(string filePath, List<ElementarySector> elementary, List<Airspace> collapsed)
+        // accs: if not null, only the lines of those ACCs are read (null = all the ACCs)
+        public ConfigurationList Read(string filePath, List<ElementarySector> elementary, List<Airspace> collapsed, HashSet<string> accs = null)
         {
             if (!File.Exists(filePath))
                 throw new FileNotFoundException($"No se encontro el archivo: {filePath}");
@@ -41,6 +42,9 @@ namespace Projecte1_WPF_.ReadData
                     continue;
 
                 string accName = parts[0].Trim();
+                if (accs != null && !accs.Contains(accName))
+                    continue; // ACC not requested
+
                 string configName = parts[1].Trim();
                 string sectorName = parts[2].Trim();
 

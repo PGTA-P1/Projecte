@@ -71,12 +71,14 @@ namespace Projecte1_WPF_.ArcGisMethods
 
             foreach (var sector in list)
             {
-                double bottomM = sector.BottomLevel * FL_TO_M;
                 double topM = Math.Min(sector.TopLevel, MAX_VISIBLE_FL) * FL_TO_M;
-                double heightM = Math.Max(topM - bottomM, 1);
 
                 foreach (var ring in sector.OuterRings)
                 {
+                    // Ground-level sectors: bottom lifted by the curvature sag so the globe does not hide part of it; top unchanged
+                    double bottomM = sector.BottomLevel == 0 ? CurvatureSag(ring) : sector.BottomLevel * FL_TO_M;
+                    double heightM = Math.Max(topM - bottomM, 1);
+
                     var builder = new PolygonBuilder(SpatialReferences.Wgs84);
                     foreach (var v in ring)
                         builder.AddPoint(new MapPoint(v.Longitude, v.Latitude, bottomM, SpatialReferences.Wgs84));
@@ -107,6 +109,21 @@ namespace Projecte1_WPF_.ArcGisMethods
             }
         }
 
+        private const double EARTH_RADIUS_M = 6371000;
+
+        // The faces of a prism are filled with flat triangles between its edge vertices. On a curved globe the middle of a
+        // chord of length d sinks d^2 / 8R below the surface (100 km -> 200 m, 300 km -> 1.8 km), so for a bottom face at
+        // 0 m the ground hides part of it (lighter patches). Returns that sag for the ring's diagonal, in metres
+        private static double CurvatureSag(List<(double Latitude, double Longitude)> ring)
+        {
+            double minLat = ring.Min(v => v.Latitude), maxLat = ring.Max(v => v.Latitude);
+            double minLon = ring.Min(v => v.Longitude), maxLon = ring.Max(v => v.Longitude);
+            double toRad = Math.PI / 180;
+            double dy = (maxLat - minLat) * toRad * EARTH_RADIUS_M;
+            double dx = (maxLon - minLon) * toRad * EARTH_RADIUS_M * Math.Cos((minLat + maxLat) / 2 * toRad);
+            return (dx * dx + dy * dy) / (8 * EARTH_RADIUS_M);
+        }
+
         public void Remove(string sectorName)
         {
             foreach (var g in _overlay.Graphics.Where(g => (string)g.Attributes["name"] == sectorName).ToList())
@@ -114,5 +131,11 @@ namespace Projecte1_WPF_.ArcGisMethods
         }
 
         public void Clear() => _overlay.Graphics.Clear();
+
+        public bool IsVisible
+        {
+            get => _overlay.IsVisible;
+            set => _overlay.IsVisible = value;
+        }
     }
 }

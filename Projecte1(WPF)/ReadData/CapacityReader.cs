@@ -1,6 +1,7 @@
 ﻿using Projecte1_WPF_.Classes;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -11,7 +12,8 @@ namespace Projecte1_WPF_.ReadData
     /// Clase encargada de procesar archivos CSV delimitados por punto y coma (;) para capacidades.
     public class CapacityReader
     {
-        public CapacityFile Read(string filePath)
+        // keep: if not null, only the sectors whose name is in the set are stored (null = load everything)
+        public CapacityFile Read(string filePath, HashSet<string> keep = null)
         {
             if (!File.Exists(filePath))
             {
@@ -40,11 +42,14 @@ namespace Projecte1_WPF_.ReadData
                 var parts = line.Split(';');
                 if (parts.Length >= 2)
                 {
+                    if (keep != null && !keep.Contains(parts[0].Trim()))
+                        continue; // sector not needed
+
                     var record = new CapacityRecord
                     {
                         SectorName = parts[0].Trim(),
                         // Intentar parsear el número; si falla (por ej. formato incorrecto), asigna 0
-                        HourlyCapacity = int.TryParse(parts[1].Trim(), out int cap) ? cap : 0
+                        HourlyCapacity = double.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double cap) ? cap : 0
                     };
 
                     result.Capacities.Add(record);

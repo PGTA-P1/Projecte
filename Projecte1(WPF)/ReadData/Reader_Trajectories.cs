@@ -9,28 +9,41 @@ namespace Projecte1_WPF_.ReadData
 {
     internal class Reader_So6
     {
-        public Trajectory[] ReadFromFile(string fileName)
+        // area: if not null, only trajectories with at least one segment inside that box are stored (null = load everything).
+        // The file is read line by line, and a trajectory outside the area is dropped as soon as it is complete.
+        public Trajectory[] ReadFromFile(string fileName, LatLonBox area = null)
         {
-            string[] lines = File.ReadAllLines(fileName);
-
             List<Trajectory> trajectoryList = new List<Trajectory>();
 
             Trajectory currentTrajectory = null;
             string currentCallSign = null;
             int lastLineNumber = 0;
+            int lineNumber = 0;
 
             // Forces the very first data line to start a trajectory.
             bool reachedDestination = true;
 
-            for (int i = 0; i < lines.Length; i++)
+            // Whether some segment of currentTrajectory touches the area
+            bool insideArea = false;
+
+            // The current trajectory is always the last one of the list, so dropping it is O(1)
+            void DropIfOutside()
             {
+                if (area != null && currentTrajectory != null && !insideArea)
+                    trajectoryList.RemoveAt(trajectoryList.Count - 1);
+            }
+
+            foreach (string line in File.ReadLines(fileName))
+            {
+                lineNumber++;
+
                 // Skip empty lines
-                if (string.IsNullOrWhiteSpace(lines[i]))
+                if (string.IsNullOrWhiteSpace(line))
                 {
                     continue;
                 }
 
-                string[] field = lines[i].Split(
+                string[] field = line.Split(
                     new[] { ' ' },
                     StringSplitOptions.RemoveEmptyEntries
                 );
@@ -46,8 +59,12 @@ namespace Projecte1_WPF_.ReadData
                     if (currentTrajectory != null && !reachedDestination)
                     {
                         ReportIncidence(currentTrajectory, lastLineNumber);
+                        DropIfOutside();
                         return trajectoryList.ToArray();
                     }
+
+                    DropIfOutside();
+                    insideArea = false;
 
                     currentTrajectory = new Trajectory
                     {
@@ -93,7 +110,10 @@ namespace Projecte1_WPF_.ReadData
                 };
 
                 currentTrajectory.Segments.Add(segment);
-                lastLineNumber = i + 1;
+                lastLineNumber = lineNumber;
+
+                if (area != null && !insideArea)
+                    insideArea = area.Intersects(segment.LatBegin, segment.LonBegin, segment.LatEnd, segment.LonEnd);
 
                 // Airport (ICAO) point names are 4 characters; route points are 3 or 5.
                 // Landing on a 4-letter point matching the declared destination means
@@ -108,6 +128,7 @@ namespace Projecte1_WPF_.ReadData
                 ReportIncidence(currentTrajectory, lastLineNumber);
             }
 
+            DropIfOutside();
             return trajectoryList.ToArray();
         }
 

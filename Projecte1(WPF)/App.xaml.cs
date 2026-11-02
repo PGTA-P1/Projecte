@@ -47,12 +47,8 @@ namespace Projecte1_WPF_
                 // Enable support for TimestampOffset fields, which also changes behavior of Date fields.
                 // For more information see https://links.esri.com/DotNetDateTime
                 ArcGISRuntimeEnvironment.EnableTimestampOffsetSupport = true;
-                var program = new mainProgram();
-                program.LoadAirblocks();
-                program.LoadElementary();
-                program.LoadCollapsed();
-                program.LoadConfiguration();
-                new MainWindow(program).Show();
+                // Starts empty: the data is loaded from the window (Load Data menu)
+                new MainWindow(new mainProgram()).Show();
 
             }
             catch (Exception ex)

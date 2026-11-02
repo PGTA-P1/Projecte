@@ -50,6 +50,12 @@ namespace Projecte1_WPF_.Classes
         /// ACCs that have at least one record
         public IEnumerable<string> AccNames { get { return _byAcc.Keys; } }
 
+        /// Records of one ACC sorted by Start (empty if the ACC has none). Each record = one configuration open in [Start, End)
+        public IReadOnlyList<OpeningSchemeRecord> GetRecords(string accName)
+        {
+            return _byAcc.TryGetValue(accName, out List<OpeningSchemeRecord> list) ? list : new List<OpeningSchemeRecord>();
+        }
+
         /// Limits of the whole scheme, for the range of the time bar
         public DateTime FirstStart { get; private set; }
         public DateTime LastEnd { get; private set; }

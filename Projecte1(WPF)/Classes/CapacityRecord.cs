@@ -13,6 +13,6 @@ namespace Projecte1_WPF_.Classes
         public string SectorName { get; set; }
 
         /// CCapacidad horaria (número).
-        public int HourlyCapacity { get; set; }
+        public double HourlyCapacity { get; set; } // some lines are decimal (e.g. 32.5)
     }
 }

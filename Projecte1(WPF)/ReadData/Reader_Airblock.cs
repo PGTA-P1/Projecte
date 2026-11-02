@@ -12,7 +12,8 @@ namespace Projecte1_WPF_.ReadData
         // The .are file stores coordinates in arc-minutes (e.g. 3420.0 = 57.0 degrees).
         private const double MINUTES_PER_DEGREE = 60.0;
 
-        public Airblock[] ReadFromFile(string fileName)
+        // keep: if not null, only airblocks whose name is in the set are stored (null = load everything)
+        public Airblock[] ReadFromFile(string fileName, HashSet<string> keep = null)
         {
             string[] lines = File.ReadAllLines(fileName);
             var airblockList = new List<Airblock>();
@@ -25,6 +26,13 @@ namespace Projecte1_WPF_.ReadData
                 string[] header = lines[i].Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
                 if (header.Length < 15)
                     throw new FormatException($"Line {i + 1}: expected at least 15 fields, found {header.Length}.");
+
+                // Not needed: skip the header line and its vertex lines without building anything
+                if (keep != null && !keep.Contains(string.Join(" ", header.Skip(14))))
+                {
+                    i += 1 + int.Parse(header[0], CultureInfo.InvariantCulture);
+                    continue;
+                }
 
                 double D(int idx) => double.Parse(header[idx], CultureInfo.InvariantCulture);
 
