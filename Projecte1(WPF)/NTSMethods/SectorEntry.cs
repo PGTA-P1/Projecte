@@ -2,15 +2,16 @@ using System;
 
 namespace Projecte1_WPF_.NTS
 {
-    // Project parameters of the entry computation (seconds)
+    // Project parameters of the entry computation (seconds). Defaults = the Parameters panel defaults; with both at 0 the
+    // open-sector entries total the 28,406 of the reference
     public class EntryParameters
     {
         // Minimum time a flight has to spend inside a sector for the entry to count
-        public double MinTimeInSector { get; set; } = 0;
+        public double MinTimeInSector { get; set; } = 30;
 
         // A flight that leaves a sector and enters it again after this time or more makes a new entry (reentry);
         // a shorter gap joins both stays into one entry
-        public double ReentryTime { get; set; } = 0;
+        public double ReentryTime { get; set; } = 60;
     }
 
     public enum EntryLevel

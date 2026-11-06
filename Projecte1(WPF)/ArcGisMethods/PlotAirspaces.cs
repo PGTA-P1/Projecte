@@ -60,6 +60,38 @@ namespace Projecte1_WPF_.ArcGisMethods
             _sceneView.GraphicsOverlays.Add(_overlay);
         }
 
+        // Colour per sector: the fill comes from the "status" attribute of each graphic (statusColors: status -> colour,
+        // the first one is the colour of a newly plotted sector), outline in outlineColor. SetStatus recolours a sector
+        public PlotAirspaces3D(SceneView sceneView, IList<(string Status, Color Fill)> statusColors, Color outlineColor)
+        {
+            _sceneView = sceneView;
+            _overlay = new GraphicsOverlay { SceneProperties = new LayerSceneProperties(SurfacePlacement.Absolute) };
+            _defaultStatus = statusColors[0].Status;
+
+            var renderer = new UniqueValueRenderer { FieldNames = { "status" } };
+            foreach (var (status, fill) in statusColors)
+            {
+                var symbol = new SimpleFillSymbol(SimpleFillSymbolStyle.Solid, fill, new SimpleLineSymbol(SimpleLineSymbolStyle.Solid, outlineColor, 1));
+                renderer.UniqueValues.Add(new UniqueValue(status, status, symbol, status));
+            }
+            renderer.DefaultSymbol = renderer.UniqueValues[0].Symbol;
+            renderer.SceneProperties.ExtrusionMode = ExtrusionMode.BaseHeight;
+            renderer.SceneProperties.ExtrusionExpression = "[height]";
+            _overlay.Renderer = renderer;
+
+            _sceneView.GraphicsOverlays.Add(_overlay);
+        }
+
+        private readonly string _defaultStatus; // null: single colour (no status)
+
+        // Recolours every polygon of the sector (only with the status constructor)
+        public void SetStatus(string sectorName, string status)
+        {
+            foreach (var g in _overlay.Graphics)
+                if ((string)g.Attributes["name"] == sectorName && (string)g.Attributes["status"] != status)
+                    g.Attributes["status"] = status;
+        }
+
         public async Task PlotAsync(IEnumerable<IMergedSector> sectors, bool zoomTo = true)
         {
             var list = sectors.ToList();
@@ -94,6 +126,8 @@ namespace Projecte1_WPF_.ArcGisMethods
                     var graphic = new Graphic(GlobeHelper.Densify(polygon));
                     graphic.Attributes["height"] = heightM;
                     graphic.Attributes["name"] = sector.Name;
+                    if (_defaultStatus != null)
+                        graphic.Attributes["status"] = _defaultStatus;
                     _overlay.Graphics.Add(graphic);
                     plotted.Add(polygon);
                 }
@@ -122,6 +156,14 @@ namespace Projecte1_WPF_.ArcGisMethods
             double dy = (maxLat - minLat) * toRad * EARTH_RADIUS_M;
             double dx = (maxLon - minLon) * toRad * EARTH_RADIUS_M * Math.Cos((minLat + maxLat) / 2 * toRad);
             return (dx * dx + dy * dy) / (8 * EARTH_RADIUS_M);
+        }
+
+        // Shows or hides every polygon of the sector (selection on the map / sector list)
+        public void SetVisible(string sectorName, bool visible)
+        {
+            foreach (var g in _overlay.Graphics)
+                if ((string)g.Attributes["name"] == sectorName && g.IsVisible != visible)
+                    g.IsVisible = visible;
         }
 
         public void Remove(string sectorName)

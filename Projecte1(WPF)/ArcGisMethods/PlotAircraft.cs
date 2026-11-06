@@ -18,27 +18,52 @@ namespace Projecte1_WPF_.ArcGisMethods
     {
         private const double FL_TO_M = 100 * 0.3048;
 
-        private readonly GraphicsOverlay _markers;
+        // One overlay per kind, drawn in this order (overlays added later draw on top): entries, exits, aircraft
+        private readonly GraphicsOverlay _entries;
+        private readonly GraphicsOverlay _exits;
         private readonly GraphicsOverlay _aircraft;
         private readonly Dictionary<long, Graphic> _planes = new Dictionary<long, Graphic>();
-        private readonly List<(Graphic Graphic, DateTime Expires)> _live = new List<(Graphic Graphic, DateTime Expires)>();
+        private readonly List<(Graphic Graphic, GraphicsOverlay Overlay, DateTime Expires)> _live = new List<(Graphic, GraphicsOverlay, DateTime)>();
 
+        // Nested sizes, so all three show at one point: green entry 15 > red exit 11 > yellow aircraft 7. Most exits (73 %)
+        // are where the plane goes straight into the next sector: the plane stays on the exit point and the next entry is
+        // there too. With the exit as small as the plane (7) and drawn under it, the red dot was fully hidden and only the
+        // green ring showed. Now a sector change shows green, red and yellow rings, a last exit a red ring around the plane
         private readonly SimpleMarkerSymbol _planeSymbol =
             new SimpleMarkerSymbol(SimpleMarkerSymbolStyle.Circle, Color.Yellow, 7) { Outline = new SimpleLineSymbol(SimpleLineSymbolStyle.Solid, Color.Black, 1) };
-        // Entries big, exits small on top: an exit and the next entry on the same boundary show as a red dot in a green ring
-        private readonly SimpleMarkerSymbol _entrySymbol = new SimpleMarkerSymbol(SimpleMarkerSymbolStyle.Circle, Color.LimeGreen, 13);
-        private readonly SimpleMarkerSymbol _exitSymbol = new SimpleMarkerSymbol(SimpleMarkerSymbolStyle.Circle, Color.Red, 7);
+        private readonly SimpleMarkerSymbol _entrySymbol = new SimpleMarkerSymbol(SimpleMarkerSymbolStyle.Circle, Color.LimeGreen, 15);
+        private readonly SimpleMarkerSymbol _exitSymbol = new SimpleMarkerSymbol(SimpleMarkerSymbolStyle.Circle, Color.Red, 11);
 
         public int AircraftCount { get { return _planes.Count; } }
         public int MarkerCount { get { return _live.Count; } }
 
-        public PlotAircraft(SceneView sceneView)
+        private GeoView _view;
+
+        // view: the 3D scene or the 2D map (the Z of the dots only counts in 3D)
+        public PlotAircraft(GeoView view)
         {
-            // Absolute placement (Z = FL in metres), same as the sector prisms. Markers first so the aircraft draw on top
-            _markers = new GraphicsOverlay { SceneProperties = new LayerSceneProperties(SurfacePlacement.Absolute) };
+            // Absolute placement (Z = FL in metres), same as the sector prisms
+            _entries = new GraphicsOverlay { SceneProperties = new LayerSceneProperties(SurfacePlacement.Absolute) };
+            _exits = new GraphicsOverlay { SceneProperties = new LayerSceneProperties(SurfacePlacement.Absolute) };
             _aircraft = new GraphicsOverlay { SceneProperties = new LayerSceneProperties(SurfacePlacement.Absolute) };
-            sceneView.GraphicsOverlays.Add(_markers);
-            sceneView.GraphicsOverlays.Add(_aircraft);
+            _view = view;
+            foreach (GraphicsOverlay o in Overlays())
+                view.GraphicsOverlays.Add(o);
+        }
+
+        private GraphicsOverlay[] Overlays() => new[] { _entries, _exits, _aircraft };
+
+        // Moves the dots and markers to the other view (2D/3D switch), on top of what that view already draws
+        public void MoveTo(GeoView view)
+        {
+            if (view == _view)
+                return;
+            foreach (GraphicsOverlay o in Overlays())
+            {
+                _view.GraphicsOverlays.Remove(o);
+                view.GraphicsOverlays.Add(o);
+            }
+            _view = view;
         }
 
         // Moves the dots of the flights in the air, adds the ones that just departed and removes the ones that landed
@@ -76,17 +101,13 @@ namespace Projecte1_WPF_.ArcGisMethods
         public void AddMarkers(List<SimEvent> events, TimeSpan life)
         {
             DateTime expires = DateTime.UtcNow + life;
-            foreach (bool entries in new[] { true, false }) // entries first so exits are drawn on top
+            foreach (SimEvent e in events)
             {
-                foreach (SimEvent e in events)
-                {
-                    if (e.IsEntry != entries)
-                        continue;
-                    var g = new Graphic(new MapPoint(e.Longitude, e.Latitude, e.FL * FL_TO_M, SpatialReferences.Wgs84),
-                                        e.IsEntry ? _entrySymbol : _exitSymbol);
-                    _markers.Graphics.Add(g);
-                    _live.Add((g, expires));
-                }
+                GraphicsOverlay overlay = e.IsEntry ? _entries : _exits; // exits always on top of entries, whatever the order
+                var g = new Graphic(new MapPoint(e.Longitude, e.Latitude, e.FL * FL_TO_M, SpatialReferences.Wgs84),
+                                    e.IsEntry ? _entrySymbol : _exitSymbol);
+                overlay.Graphics.Add(g);
+                _live.Add((g, overlay, expires));
             }
         }
 
@@ -97,7 +118,7 @@ namespace Projecte1_WPF_.ArcGisMethods
             {
                 if (_live[i].Expires > now)
                     continue;
-                _markers.Graphics.Remove(_live[i].Graphic);
+                _live[i].Overlay.Graphics.Remove(_live[i].Graphic);
                 _live.RemoveAt(i);
             }
         }
@@ -105,12 +126,13 @@ namespace Projecte1_WPF_.ArcGisMethods
         public bool IsVisible
         {
             get => _aircraft.IsVisible;
-            set { _aircraft.IsVisible = value; _markers.IsVisible = value; }
+            set { foreach (GraphicsOverlay o in Overlays()) o.IsVisible = value; }
         }
 
         public void ClearMarkers()
         {
-            _markers.Graphics.Clear();
+            _entries.Graphics.Clear();
+            _exits.Graphics.Clear();
             _live.Clear();
         }
 

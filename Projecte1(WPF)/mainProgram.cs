@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Projecte1_WPF.Classes;
 using Projecte1_WPF_.Classes;
 using Projecte1_WPF_.NTS;
@@ -41,6 +43,9 @@ namespace Projecte1_WPF_
         // Project parameters (minimum time in sector, reentry time) used by ComputeEntries
         public EntryParameters Parameters { get; } = new EntryParameters();
 
+        // Project parameters of the demand (integration window, sliding step), used by Simulation/SectorDemand
+        public Simulation.DemandParameters DemandParameters { get; } = new Simulation.DemandParameters();
+
         // Entries of both levels (Elementary and Open), sorted by entry time. Filled by ComputeEntries
         public List<SectorEntry> Entries { get; private set; } = new List<SectorEntry>();
 
@@ -50,26 +55,45 @@ namespace Projecte1_WPF_
 
         // ------------------------------------------------------------------------------------------------
         // ENTRIES of the whole batch. Needs a load first (LoadFiltered).
-        // Check a few flights first with Checks > Crossings of sample flights (NTSMethods/CrossingCheck.cs) before running this.
+        // NTSMethods/CrossingCheck.Run checks a few flights against independent oracles (no menu any more: call it from a
+        // test harness after touching the crossing code).
         // Results are built in new lists and published at the end, so it can run on a background thread.
         // ------------------------------------------------------------------------------------------------
-        // Returns a one-line summary (counts and time)
-        public string ComputeEntries()
+        // Returns a one-line summary (counts and time). progress (optional) gets the fraction of trajectories done, 0..1
+        public string ComputeEntries(IProgress<double> progress = null)
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
             var crossing = new CrossingCalculator(Elementary, Airblocks);
             var calculator = new EntryCalculator(Configurations, Elementary, Collapsed, OpeningScheme);
 
+            // Flights are independent, so they run in parallel (both calculators only read once built). Each flight
+            // writes its own slot and the slots are joined in load order: same result and order as one after another
+            var perFlight = new List<SectorEntry>[Trajectories.Count];
+            int done = 0;
+            Parallel.For(0, Trajectories.Count, i =>
+            {
+                Trajectory t = Trajectories[i];
+                Dictionary<string, List<Interval>> inside = crossing.Cross(t);
+                // Empty: never inside an elementary sector of the ACCs, does not cross their airspace (exact filter)
+                if (inside.Count > 0)
+                {
+                    List<SectorEntry> list = calculator.ElementaryEntries(t, inside, Parameters);
+                    list.AddRange(calculator.OpenEntries(t, inside, Parameters));
+                    perFlight[i] = list;
+                }
+                int n = Interlocked.Increment(ref done);
+                if (progress != null && n % 50 == 0)
+                    progress.Report((double)n / Trajectories.Count);
+            });
+
             var entries = new List<SectorEntry>();
             var crossed = new List<Trajectory>();
-            foreach (Trajectory t in Trajectories)
+            for (int i = 0; i < perFlight.Length; i++)
             {
-                Dictionary<string, List<Interval>> inside = crossing.Cross(t);
-                if (inside.Count == 0)
-                    continue; // never inside an elementary sector of the ACCs: does not cross their airspace (exact filter)
-                crossed.Add(t);
-                entries.AddRange(calculator.ElementaryEntries(t, inside, Parameters));
-                entries.AddRange(calculator.OpenEntries(t, inside, Parameters));
+                if (perFlight[i] == null)
+                    continue;
+                crossed.Add(Trajectories[i]);
+                entries.AddRange(perFlight[i]);
             }
 
             entries.Sort((a, b) => a.Entry.CompareTo(b.Entry));

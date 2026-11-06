@@ -103,18 +103,21 @@ namespace Projecte1_WPF_.NTS
                     continue;
                 }
 
-                sb.AppendLine("  -- segment log (candidates whose FL band matches; vertical rejects only counted)");
+                sb.AppendLine("  -- segment log: 1 horizontal u_h, 2 vertical u_v, 3 both (AND) u_entry/u_exit, 4 interpolated times");
+                sb.AppendLine("     (only volumes the segment enters horizontally are listed; the others are counted)");
                 foreach (var group in log.GroupBy(s => s.Segment))
                 {
                     TrajectorySegment s = t.Segments[group.Key];
-                    int rejected = group.Count(x => !x.VerticalInside);
+                    int missed = group.Count(x => x.Horizontal.Count == 0);
                     sb.AppendLine($"  seg {group.Key,3} {s.PointFrom}->{s.PointTo}  {s.BeginDateTime:HH:mm:ss}-{s.EndDateTime:HH:mm:ss}  " +
-                                  $"FL{s.FLBegin:000}->FL{s.FLEnd:000}  candidates {group.Count()}, vertical rejects {rejected}");
-                    foreach (CrossingStep x in group.Where(x => x.VerticalInside))
+                                  $"FL{s.FLBegin:000}->FL{s.FLEnd:000}  candidates {group.Count()}, outside horizontally {missed}");
+                    foreach (CrossingStep x in group.Where(x => x.Horizontal.Count > 0))
                     {
-                        string h = x.Horizontal.Count == 0 ? "none" : string.Join(" ", x.Horizontal.Select(u => $"[{u.U0:F3},{u.U1:F3}]"));
-                        string res = x.Result.Count == 0 ? "-" : string.Join(" ", x.Result.Select(i => $"{i.Start:HH:mm:ss}-{i.End:HH:mm:ss}"));
-                        sb.AppendLine($"        {x.Sector,-12} [{x.BottomLevel:000},{x.TopLevel:000})  V [{x.V0:F3},{x.V1:F3}]  H {h}  -> {res}");
+                        string h = string.Join(" ", x.Horizontal);
+                        string v = x.Vertical == null ? "none" : x.Vertical.Value.ToString();
+                        string both = x.Both.Count == 0 ? "none" : string.Join(" ", x.Both);
+                        string times = x.Times.Count == 0 ? "-" : string.Join(" ", x.Times.Select(i => $"{i.Start:HH:mm:ss}-{i.End:HH:mm:ss}"));
+                        sb.AppendLine($"        {x.Sector,-12} FL[{x.FlMin:000},{x.FlMax:000})  u_h {h}  u_v {v}  both {both}  -> {times}");
                     }
                 }
 

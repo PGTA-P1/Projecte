@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
-using System.Text;
+using System.Threading;
 using Projecte1_WPF.Classes;
 using Projecte1_WPF_.Classes;
 
@@ -43,9 +41,10 @@ namespace Projecte1_WPF_.NTS
         private readonly Dictionary<string, List<OpenPeriod>> _openPeriods =
             new Dictionary<string, List<OpenPeriod>>(StringComparer.OrdinalIgnoreCase);
 
-        // Counters of the OpenEntries calls (for checking the data)
-        public int StaysNeverOpen { get; private set; }   // stays in a sector that was not open at any moment of the stay
-        public int PiecesTooShort { get; private set; }   // open pieces shorter than MinTimeInSector
+        // Counters of the OpenEntries calls (for checking the data). Interlocked: ComputeEntries calls it from several threads
+        private int _staysNeverOpen, _piecesTooShort;
+        public int StaysNeverOpen { get { return _staysNeverOpen; } }   // stays in a sector that was not open at any moment of the stay
+        public int PiecesTooShort { get { return _piecesTooShort; } }   // open pieces shorter than MinTimeInSector
 
         public EntryCalculator(List<Configuration> configurations, List<ElementarySector> elementary,
                                List<Airspace> collapsed, OpeningScheme scheme)
@@ -193,7 +192,7 @@ namespace Projecte1_WPF_.NTS
                             continue;
                         open = true;
 
-                        if ((end - start).TotalSeconds < p.MinTimeInSector) { PiecesTooShort++; continue; }
+                        if ((end - start).TotalSeconds < p.MinTimeInSector) { Interlocked.Increment(ref _piecesTooShort); continue; }
 
                         entries.Add(new SectorEntry
                         {
@@ -209,28 +208,11 @@ namespace Projecte1_WPF_.NTS
                             Exit = end
                         });
                     }
-                    if (!open) StaysNeverOpen++;
+                    if (!open) Interlocked.Increment(ref _staysNeverOpen);
                 }
             }
 
             return entries;
-        }
-
-        // Entry results file: one line per entry, ';' separated, times UTC
-        public static void SaveCsv(string path, IEnumerable<SectorEntry> entries)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("FlightId;CallSign;Level;Cause;Sector;Acc;Configuration;Entry;Exit;Duration_s");
-            foreach (SectorEntry e in entries)
-            {
-                sb.Append(e.FlightId).Append(';').Append(e.CallSign).Append(';').Append(e.Level).Append(';')
-                  .Append(e.Cause).Append(';').Append(e.Sector).Append(';')
-                  .Append(e.Acc).Append(';').Append(e.Configuration).Append(';')
-                  .Append(e.Entry.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)).Append(';')
-                  .Append(e.Exit.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)).Append(';')
-                  .AppendLine(e.DurationSeconds.ToString("F0", CultureInfo.InvariantCulture));
-            }
-            File.WriteAllText(path, sb.ToString());
         }
     }
 }

@@ -9,16 +9,99 @@
         Title="Projecte P1 - Trajectory entries and sector demand" Height="800" Width="1280" WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <local:SceneViewModel x:Key="SceneViewModel" />
+        <!-- Pop-ups (ToolTips) of the whole window: text wrapped at a readable width -->
+        <Style TargetType="ToolTip">
+            <Setter Property="MaxWidth" Value="300" />
+            <Setter Property="ContentTemplate">
+                <Setter.Value>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" TextWrapping="Wrap" />
+                    </DataTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+                <!-- One handle of the flight-level range: a blue round thumb on a track with no background, so
+                     the two sliders on top of each other only take the mouse on their handles -->
+                <Style x:Key="RangeHandle" TargetType="Slider">
+                    <Setter Property="Cursor" Value="Hand" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Slider">
+                                <Track x:Name="PART_Track">
+                                    <Track.Thumb>
+                                        <Thumb Width="14" Height="14">
+                                            <Thumb.Template>
+                                                <ControlTemplate TargetType="Thumb">
+                                                    <Ellipse x:Name="Dot" Fill="#FF1F6FD1" Stroke="White" StrokeThickness="2" />
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="Dot" Property="Fill" Value="#FF1A5FB4" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Thumb.Template>
+                                        </Thumb>
+                                    </Track.Thumb>
+                                </Track>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+                <!-- One-line explanation under a value -->
+                <Style x:Key="Note" TargetType="TextBlock">
+                    <Setter Property="TextWrapping" Value="Wrap" />
+                    <Setter Property="Foreground" Value="#FF606060" />
+                    <Setter Property="FontSize" Value="11" />
+                    <Setter Property="Margin" Value="0,0,0,8" />
+                </Style>
+                <Style x:Key="Value" TargetType="TextBox">
+                    <Setter Property="Width" Value="64" />
+                    <Setter Property="TextAlignment" Value="Right" />
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                </Style>
+                <!-- One half of the 2D/3D switch: transparent on the grey track, the chosen half a blue pill with
+                     white text; light blue under the mouse; a blue ring when it has the keyboard focus -->
+                <Style x:Key="Segment" TargetType="RadioButton">
+                    <Setter Property="Foreground" Value="#FF34495E" />
+                    <Setter Property="FontWeight" Value="SemiBold" />
+                    <Setter Property="Padding" Value="0,4" />
+                    <Setter Property="Cursor" Value="Hand" />
+                    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="RadioButton">
+                                <Border x:Name="Pill" CornerRadius="5" Background="Transparent" BorderBrush="Transparent"
+                                        BorderThickness="1" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Pill" Property="Background" Value="#FFD6E4F5" />
+                                    </Trigger>
+                                    <Trigger Property="IsChecked" Value="True">
+                                        <Setter TargetName="Pill" Property="Background" Value="#FF1F6FD1" />
+                                        <Setter Property="Foreground" Value="White" />
+                                    </Trigger>
+                                    <Trigger Property="IsKeyboardFocused" Value="True">
+                                        <Setter TargetName="Pill" Property="BorderBrush" Value="#FF0B3D80" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
     </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
+        <!-- Column 0: the parameters strip, from under the toolbar to the bottom. Column 1: map, timeline and status line -->
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
         <ToolBar Grid.Row="0" Grid.ColumnSpan="2" Padding="0" FontSize="11">
@@ -30,42 +113,314 @@
                     <Separator Opacity="0.4" Margin="0,1"/>
                     <MenuItem Header="Your own files..." IsEnabled="False" ToolTip="Not available yet" ToolTipService.ShowOnDisabled="True"/>
                 </MenuItem>
-                <MenuItem x:Name="ChecksMenu" Header="Checks" Padding="4,2" IsEnabled="False">
-                    <MenuItem Header="ACC filter" Click="CheckFilter_Click"/>
-                    <MenuItem Header="Crossings of sample flights" Click="CheckCrossings_Click"/>
-                </MenuItem>
+                <!-- Opens the parameters pop-up (ParamsPopup) under it -->
+                <MenuItem x:Name="ParamsMenu" Header="Parameters" Padding="4,2" Click="ParamsMenu_Click"
+                          ToolTip="Entry and demand parameters: minimum time, reentry time, integration window, sliding step" />
             </Menu>
             <Separator/>
-            <!-- Wrapped so the ToolBar does not give it its flat style: a normal button reads as the main action. Enabled once the data is ready -->
+            <!-- Main action: a rounded blue button with a play icon, grey while disabled (until the data is ready). Wrapped so
+                 the ToolBar does not give it its flat style -->
             <Grid>
-                <Button x:Name="StartSimBTN" Content="Start simulation" FontSize="12" Padding="10,2" Margin="4,1"
-                        IsEnabled="False" Click="StartSimulation_Click" />
+                <Button x:Name="StartSimBTN" Margin="6,2" IsEnabled="False" Click="StartSimulation_Click" Cursor="Hand"
+                        AutomationProperties.Name="Start simulation" ToolTip="Play the traffic from the first take-off (again from the start if pressed later)">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bg" CornerRadius="5" Background="#FF1F6FD1" BorderBrush="#FF1F6FD1" BorderThickness="1" Padding="12,3">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="0,0,7,0" />
+                                    <TextBlock Text="Start simulation" Foreground="White" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bg" Property="Background" Value="#FF1A5FB4" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bg" Property="Background" Value="#FF154C91" />
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter TargetName="Bg" Property="BorderBrush" Value="#FF0B2E5E" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="Bg" Property="Background" Value="#FFB8C4D0" />
+                                    <Setter TargetName="Bg" Property="BorderBrush" Value="#FFB8C4D0" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
             </Grid>
-            <Separator/>
-            <TextBlock x:Name="StatusText" Margin="6,0" VerticalAlignment="Center" FontSize="12" Foreground="#FF404040"
-                       Text="No data loaded. Use Load Data > Default data." />
+            <!-- Results of the simulation: appears right of Start simulation once it has been run -->
+            <Menu x:Name="ResultsBar" Background="Transparent" VerticalAlignment="Center" Visibility="Collapsed">
+                <MenuItem Header="Results" Padding="4,2">
+                    <MenuItem x:Name="ExportEntriesItem" Header="Export entries (CSV)" Click="ExportEntries_Click"/>
+                    <MenuItem Header="Open Exports folder" Click="OpenExports_Click"/>
+                </MenuItem>
+            </Menu>
         </ToolBar>
 
         <esri:SceneView x:Name="MySceneView"
-                Grid.Row="1" Grid.Column="0"
+                Grid.Row="1" Grid.Column="1"
                 IsAttributionTextVisible="False"
                 Scene="{Binding Scene, Source={StaticResource SceneViewModel}}" />
 
-        <!-- Results of the Checks menu; hidden until a check runs -->
-        <Border x:Name="CheckPanel" Grid.Row="1" Grid.Column="1" Width="460" Visibility="Collapsed"
-                BorderBrush="#FFD5DFE5" BorderThickness="1,0,0,0" Background="White">
-            <DockPanel>
+        <!-- 2D map: shown instead of the 3D scene by the 2D/3D switch of the left strip -->
+        <esri:MapView x:Name="MyMapView" Grid.Row="1" Grid.Column="1" IsAttributionTextVisible="False" Visibility="Collapsed" />
+
+        <!-- MAP BUTTONS: small, half-transparent buttons in the top-right corner of the map, shown once the data is loaded.
+             Home: flies back to the whole area of the ACCs, as framed after loading. Compass: its needle points north
+             (turns with the view); click = north up again. Rotate (2D map only, which has no mouse rotation of its own;
+             right-drag also rotates it): 15 degrees each way -->
+        <StackPanel x:Name="MapButtons" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,10,10,0" Visibility="Collapsed">
+            <StackPanel.Resources>
+                <Style TargetType="Button">
+                    <Setter Property="Width" Value="32" />
+                    <Setter Property="Height" Value="32" />
+                    <Setter Property="Margin" Value="0,0,0,6" />
+                    <Setter Property="Cursor" Value="Hand" />
+                    <Setter Property="Foreground" Value="#FF34495E" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Face" CornerRadius="6" Background="#CCFFFFFF" BorderBrush="#66000000" BorderThickness="1" Opacity="0.75">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Face" Property="Opacity" Value="1" />
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="Face" Property="Background" Value="#FFD6E4F5" />
+                                    </Trigger>
+                                    <Trigger Property="IsKeyboardFocused" Value="True">
+                                        <Setter TargetName="Face" Property="Opacity" Value="1" />
+                                        <Setter TargetName="Face" Property="BorderBrush" Value="#FF0B3D80" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </StackPanel.Resources>
+            <Button x:Name="HomeViewBTN" Click="HomeView_Click" ToolTip="Back to the whole area" AutomationProperties.Name="Back to the whole area">
+                <TextBlock Text="&#xE80F;" FontFamily="Segoe MDL2 Assets" FontSize="15" />
+            </Button>
+            <Button x:Name="CompassBTN" Click="Compass_Click" ToolTip="North up" AutomationProperties.Name="North up">
+                <!-- Needle: red half points north -->
+                <Canvas Width="14" Height="20" RenderTransformOrigin="0.5,0.5">
+                    <Canvas.RenderTransform>
+                        <RotateTransform x:Name="CompassNeedle" Angle="0" />
+                    </Canvas.RenderTransform>
+                    <Polygon Points="7,0 12,10 2,10" Fill="#FFD0342C" />
+                    <Polygon Points="2,10 12,10 7,20" Fill="#FF8A97A6" />
+                </Canvas>
+            </Button>
+            <StackPanel x:Name="RotateButtons" Visibility="Collapsed">
+                <Button Click="RotateLeft_Click" ToolTip="Rotate the map left (or drag with the right mouse button)" AutomationProperties.Name="Rotate the map left">
+                    <TextBlock Text="&#x27F2;" FontFamily="Segoe UI Symbol" FontSize="16" />
+                </Button>
+                <Button Click="RotateRight_Click" ToolTip="Rotate the map right (or drag with the right mouse button)" AutomationProperties.Name="Rotate the map right">
+                    <TextBlock Text="&#x27F3;" FontFamily="Segoe UI Symbol" FontSize="16" />
+                </Button>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- MAP strip, always visible on the left, from the toolbar to the bottom (collapsible with «): View on top (2D/3D
+             switch, line options, flight levels shown), the sector list filling the rest, the colour legend at the bottom.
+             Explanations are pop-ups (ToolTip) on hover. The entry and demand parameters are in the toolbar pop-up -->
+        <Border x:Name="ParamPanel" Grid.Row="1" Grid.RowSpan="3" Grid.Column="0" Width="340"
+                BorderBrush="#FFD5DFE5" BorderThickness="0,0,1,0" Background="White">
+            <DockPanel ToolTipService.InitialShowDelay="300" ToolTipService.ShowDuration="20000">
                 <Grid DockPanel.Dock="Top" Background="#FFEEF5FD">
-                    <TextBlock x:Name="CheckTitle" Margin="8,6" VerticalAlignment="Center" FontWeight="SemiBold" />
-                    <Button Content="Close" HorizontalAlignment="Right" Margin="6,4" Padding="8,1" Click="CloseCheck_Click" />
+                    <TextBlock Text="Map" Margin="8,6" VerticalAlignment="Center" FontWeight="SemiBold" />
+                    <Button Content="«" ToolTip="Hide this panel" AutomationProperties.Name="Hide the map panel"
+                            HorizontalAlignment="Right" Margin="6,4" Padding="8,0" Click="ToggleParameters_Click" />
                 </Grid>
-                <TextBox x:Name="CheckText" IsReadOnly="True" BorderThickness="0" Padding="6" FontFamily="Consolas" FontSize="11"
-                         TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
+
+                <!-- VIEW: 2D/3D switch (left 2D map, right 3D globe): two radio buttons as one segmented control, the
+                     line options and the flight levels shown -->
+                <StackPanel DockPanel.Dock="Top" Margin="10,8,10,0">
+                    <TextBlock Text="View" FontWeight="SemiBold" />
+                    <Border Margin="0,4,0,6" Padding="2" CornerRadius="7" Background="#FFE9EEF4" BorderBrush="#FFC9D3DE" BorderThickness="1">
+                        <UniformGrid Columns="2">
+                            <RadioButton x:Name="View2DBTN" GroupName="View" Content="2D map" Style="{StaticResource Segment}"
+                                         ToolTip="Flat map: one shape per sector" AutomationProperties.Name="2D map view" Checked="View2D_Checked" />
+                            <RadioButton x:Name="View3DBTN" GroupName="View" Content="3D globe" Style="{StaticResource Segment}" IsChecked="True"
+                                         ToolTip="Globe with the sectors as 3D volumes" AutomationProperties.Name="3D globe view" Checked="View3D_Checked" />
+                        </UniformGrid>
+                    </Border>
+                    <CheckBox x:Name="MemberBordersBox" IsChecked="True" Margin="0,1" Checked="LineOptions_Changed" Unchecked="LineOptions_Changed"
+                              Content="Borders inside collapsed sectors" AutomationProperties.Name="Show the borders inside collapsed sectors, white dashes"
+                              ToolTip="White dashes: the borders between the elementary sectors that make up a collapsed sector. The solid black line is the outline of every sector." />
+                    <!-- 2D only: shown while the 2D map is shown (SetView); in 3D the volumes show the heights -->
+                    <CheckBox x:Name="LevelStepsBox" IsChecked="False" Visibility="Collapsed" Margin="0,1" Checked="LineOptions_Changed" Unchecked="LineOptions_Changed"
+                              Content="Height steps" AutomationProperties.Name="Show the height steps, black dots"
+                              ToolTip="Black dots: where a sector's floor or ceiling changes. 2D map only: in 3D the volumes show the heights." />
+
+                    <!-- Flight levels shown: two-handle slider (two sliders on one track, only their handles take the mouse).
+                         Display only: applied a moment after the last move (FlApplyTimer) -->
+                    <StackPanel Margin="0,6,0,0"
+                                ToolTip="Only the sectors (cut to these levels) and the aircraft between the two flight levels are drawn and listed. Display only: the entries, the demand and the colours always use all the levels. FL 600+ = no upper limit.">
+                        <DockPanel>
+                            <TextBlock x:Name="FlRangeText" DockPanel.Dock="Right" FontFamily="Consolas" Text="FL000 - 600+" VerticalAlignment="Center" />
+                            <TextBlock Text="Flight levels shown" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <Grid x:Name="FlRangeTrack" Height="22" Margin="0,2,0,0" SizeChanged="FlRangeTrack_SizeChanged">
+                            <Border Height="4" CornerRadius="2" Background="#FFC9D3DE" VerticalAlignment="Center" Margin="7,0" />
+                            <Border x:Name="FlRangeFill" Height="4" CornerRadius="2" Background="#FF1F6FD1" VerticalAlignment="Center" HorizontalAlignment="Left" Margin="7,0" />
+                            <Slider x:Name="FlFromSlider" Style="{StaticResource RangeHandle}" Minimum="0" Maximum="600" Value="0" SmallChange="10" LargeChange="50"
+                                    TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="FlSlider_ValueChanged" AutomationProperties.Name="Lowest flight level shown" />
+                            <Slider x:Name="FlToSlider" Style="{StaticResource RangeHandle}" Minimum="0" Maximum="600" Value="600" SmallChange="10" LargeChange="50"
+                                    TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="FlSlider_ValueChanged" AutomationProperties.Name="Highest flight level shown" />
+                        </Grid>
+                        <TextBlock Style="{StaticResource Note}" Text="Display only: entries and demand use all levels." />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Legend of the sector colours (PlotOpenSectors.STATUS_COLORS, opaque here), one line at the bottom -->
+                <WrapPanel DockPanel.Dock="Bottom" Margin="10,4,10,8"
+                           ToolTip="Entries in the current demand window against the capacity in that window. Sectors with no limit (999 or not in the capacity file) are green.">
+                    <StackPanel Orientation="Horizontal" Margin="0,1,10,1">
+                        <Border Width="12" Height="12" Background="#FF00AA00" BorderBrush="Gray" BorderThickness="1" />
+                        <TextBlock Text=" &lt; 80 %" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,1,10,1">
+                        <Border Width="12" Height="12" Background="#FFF0C800" BorderBrush="Gray" BorderThickness="1" />
+                        <TextBlock Text=" 80-100 %" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,1">
+                        <Border Width="12" Height="12" Background="#FFDC1414" BorderBrush="Gray" BorderThickness="1" />
+                        <TextBlock Text=" &gt; 100 % overload" VerticalAlignment="Center" />
+                    </StackPanel>
+                </WrapPanel>
+
+                <!-- SECTORS: the open sectors shown at the timeline time (flight-level filter applied), with a search box.
+                     Selecting rows shows only those sectors and their aircraft on the map; double-click zooms to one;
+                     Show all / Esc brings everything back. About 65 rows at most, so a DataGrid is fine (unlike the 28k
+                     entries) -->
+                <DockPanel Margin="10,8,10,0">
+                    <DockPanel DockPanel.Dock="Top">
+                        <Button x:Name="ShowAllBTN" DockPanel.Dock="Right" Content="Show all" Padding="8,0" Visibility="Collapsed"
+                                Click="ShowAll_Click" ToolTip="Show all the sectors and aircraft again (Esc)" />
+                        <TextBlock Text="Sectors" FontWeight="SemiBold" VerticalAlignment="Center"
+                                   ToolTip="Open sectors shown at the timeline time. Click a row (Ctrl or Shift for several) to show only those sectors and their aircraft; double-click to zoom to it. Double-click a sector on the map does the same." />
+                    </DockPanel>
+                    <Grid DockPanel.Dock="Top" Margin="0,4">
+                        <TextBox x:Name="SectorSearchBox" TextChanged="SectorSearch_TextChanged" VerticalContentAlignment="Center" Padding="2,1"
+                                 AutomationProperties.Name="Search sectors" ToolTip="Filter the list by sector, ACC or configuration" />
+                        <TextBlock Text="Search sector, ACC or configuration" Foreground="#FF9AA5B1" Margin="5,0" VerticalAlignment="Center" IsHitTestVisible="False">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=SectorSearchBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                    <DataGrid x:Name="SectorGrid" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" SelectionMode="Extended"
+                              SelectionUnit="FullRow" CanUserAddRows="False" CanUserResizeRows="False" GridLinesVisibility="None" FontSize="11"
+                              BorderBrush="#FFC9D3DE" Background="White" RowBackground="White" AlternatingRowBackground="#FFF6F8FB"
+                              SelectionChanged="SectorGrid_SelectionChanged" MouseDoubleClick="SectorGrid_MouseDoubleClick"
+                              AutomationProperties.Name="Open sectors">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Binding="{Binding Sector}" Width="78">
+                                <DataGridTextColumn.Header><TextBlock Text="Sector" ToolTip="Sector of the open configuration (elementary or collapsed)" /></DataGridTextColumn.Header>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Binding="{Binding Acc}" Width="62">
+                                <DataGridTextColumn.Header><TextBlock Text="ACC" ToolTip="ACC whose configuration has the sector open" /></DataGridTextColumn.Header>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Binding="{Binding Configuration}" Width="40">
+                                <DataGridTextColumn.Header><TextBlock Text="Cfg" ToolTip="Configuration open in that ACC now" /></DataGridTextColumn.Header>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Binding="{Binding Demand}" Width="34">
+                                <DataGridTextColumn.Header><TextBlock Text="Dem" ToolTip="Demand: entries in the current window [start, end)" /></DataGridTextColumn.Header>
+                                <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Right" /></Style></DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Binding="{Binding CapacityText}" SortMemberPath="CapacitySort" Width="38">
+                                <DataGridTextColumn.Header><TextBlock Text="Cap/h" ToolTip="Nominal capacity per hour (capacity file); none = no limit" /></DataGridTextColumn.Header>
+                                <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Right" /></Style></DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTemplateColumn SortMemberPath="Load" Width="*">
+                                <DataGridTemplateColumn.Header><TextBlock Text="Load" ToolTip="Demand / capacity in the window (capacity per hour × window / 60), coloured like the map" /></DataGridTemplateColumn.Header>
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{Binding StatusBrush}" CornerRadius="3" Padding="4,0" Margin="1">
+                                            <TextBlock Text="{Binding LoadText}" HorizontalAlignment="Right" />
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
             </DockPanel>
         </Border>
 
+        <!-- PARAMETERS pop-up (Parameters in the toolbar menu): entry parameters (minimum time, reentry time: changing them
+             computes the entries again, after a confirmation) and demand parameters (window, step: applied at once). They
+             are rarely changed, so they are out of the strip. Enter applies, Esc closes; it closes when clicking elsewhere -->
+        <Popup x:Name="ParamsPopup" PlacementTarget="{Binding ElementName=ParamsMenu}" Placement="Bottom" StaysOpen="False"
+               AllowsTransparency="True" PopupAnimation="Fade">
+            <Border Background="White" BorderBrush="#FFC9D3DE" BorderThickness="1" CornerRadius="6" Padding="12,10" Width="290" Margin="0,2,8,8"
+                    PreviewKeyDown="ParamsPopup_KeyDown">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.25" />
+                </Border.Effect>
+                <StackPanel ToolTipService.InitialShowDelay="300" ToolTipService.ShowDuration="20000">
+                    <TextBlock Text="Entries" FontWeight="SemiBold" Margin="0,0,0,4" ToolTip="Changing these computes the entries again (a few seconds), after a confirmation." />
+                    <DockPanel Margin="0,0,0,3" ToolTip="Stays in a sector shorter than this are not counted as entries.">
+                        <TextBlock DockPanel.Dock="Right" Text=" s" Width="28" VerticalAlignment="Center" />
+                        <TextBox x:Name="MinTimeBox" DockPanel.Dock="Right" Style="{StaticResource Value}" AutomationProperties.Name="Minimum time in sector, seconds" />
+                        <Label Content="_Minimum time" Target="{Binding ElementName=MinTimeBox}" Padding="0" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,3" ToolTip="A flight that leaves a sector and comes back sooner than this keeps the same entry.">
+                        <TextBlock DockPanel.Dock="Right" Text=" s" Width="28" VerticalAlignment="Center" />
+                        <TextBox x:Name="ReentryBox" DockPanel.Dock="Right" Style="{StaticResource Value}" AutomationProperties.Name="Reentry time, seconds" />
+                        <Label Content="_Reentry time" Target="{Binding ElementName=ReentryBox}" Padding="0" VerticalAlignment="Center" />
+                    </DockPanel>
+
+                    <TextBlock Text="Demand" FontWeight="SemiBold" Margin="0,6,0,4" ToolTip="Applied at once. Capacity per window = hourly capacity × window / 60." />
+                    <DockPanel Margin="0,0,0,3" ToolTip="Entries are counted in windows of this length, half-open [start, end).">
+                        <TextBlock DockPanel.Dock="Right" Text=" min" Width="28" VerticalAlignment="Center" />
+                        <TextBox x:Name="WindowBox" DockPanel.Dock="Right" Style="{StaticResource Value}" AutomationProperties.Name="Integration window, minutes" />
+                        <Label Content="Integration _window" Target="{Binding ElementName=WindowBox}" Padding="0" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,3" ToolTip="A new window starts every step; it cannot be longer than the window.">
+                        <TextBlock DockPanel.Dock="Right" Text=" min" Width="28" VerticalAlignment="Center" />
+                        <TextBox x:Name="StepBox" DockPanel.Dock="Right" Style="{StaticResource Value}" AutomationProperties.Name="Sliding step, minutes" />
+                        <Label Content="Sliding _step" Target="{Binding ElementName=StepBox}" Padding="0" VerticalAlignment="Center" />
+                    </DockPanel>
+
+                    <Button x:Name="ApplyParamBTN" Content="_Apply" HorizontalAlignment="Left" Padding="14,2" Margin="0,4,0,0"
+                            Click="ApplyParameters_Click" ToolTip="Apply the entry and demand values (Enter)" />
+                    <TextBlock x:Name="ParamMessage" TextWrapping="Wrap" Margin="0,6,0,0" />
+                    <!-- Shown when the entry parameters changed after loading: the user confirms the recomputation -->
+                    <StackPanel x:Name="RecomputeRow" Orientation="Horizontal" Margin="0,6,0,0" Visibility="Collapsed">
+                        <Button Content="Recompute entries" Padding="10,2" Click="RecomputeEntries_Click" />
+                        <Button Content="Cancel" Padding="10,2" Margin="6,0,0,0" Click="CancelRecompute_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Popup>
+
+        <!-- The strip hidden: only this narrow button stays, to show it again -->
+        <Button x:Name="ParamShowBTN" Grid.Row="1" Grid.RowSpan="3" Grid.Column="0" Visibility="Collapsed" Width="26" Padding="0"
+                ToolTip="Show the map panel" AutomationProperties.Name="Show the map panel" Click="ToggleParameters_Click"
+                VerticalContentAlignment="Top">
+            <TextBlock Text="Map »" Margin="0,8,0,0">
+                <TextBlock.LayoutTransform>
+                    <RotateTransform Angle="90" />
+                </TextBlock.LayoutTransform>
+            </TextBlock>
+        </Button>
+
         <!-- Timeline: relevant trajectories played in time order; hidden until there is something to simulate -->
-        <Border x:Name="TimelineBar" Grid.Row="2" Grid.ColumnSpan="2" Visibility="Collapsed"
+        <Border x:Name="TimelineBar" Grid.Row="2" Grid.Column="1" Visibility="Collapsed"
                 BorderBrush="#FFD5DFE5" BorderThickness="0,1,0,0" Background="#FFEEF5FD">
             <Grid Margin="6,4">
                 <Grid.ColumnDefinitions>
@@ -79,8 +434,22 @@
                 <ComboBox x:Name="SpeedBox" Grid.Column="1" Margin="6,0" MinWidth="70" SelectionChanged="SpeedBox_SelectionChanged" />
                 <Slider x:Name="TimeSlider" Grid.Column="2" Margin="6,0" VerticalAlignment="Center" ValueChanged="TimeSlider_ValueChanged" />
                 <TextBlock x:Name="TimeText" Grid.Column="3" Margin="6,0" VerticalAlignment="Center" FontFamily="Consolas" />
-                <TextBlock x:Name="AirText" Grid.Column="4" MinWidth="230" VerticalAlignment="Center" />
+                <!-- Fixed length (AirDescription pads every field), so the slider does not change width while playing -->
+                <TextBlock x:Name="AirText" Grid.Column="4" VerticalAlignment="Center" FontFamily="Consolas"
+                           ToolTip="Aircraft shown (or when the next one appears) · open sectors shown · sectors near the limit (80-100 %) · overloaded sectors (&gt; 100 %) · current demand window" />
             </Grid>
+        </Border>
+
+        <!-- Status line: what the app is doing or just did (loading, export, end of the simulation). Full width at the bottom,
+             always visible: inside the ToolBar it was moved to the overflow arrow when the window was not wide enough.
+             The progress bar on its right is shown only while something runs in the background -->
+        <Border Grid.Row="3" Grid.Column="1" BorderBrush="#FFD5DFE5" BorderThickness="0,1,0,0" Background="#FFF7F9FC">
+            <DockPanel Margin="8,3">
+                <ProgressBar x:Name="WorkProgress" DockPanel.Dock="Right" Width="240" Height="14" Margin="10,0,0,0" Visibility="Collapsed" />
+                <TextBlock x:Name="StatusText" FontSize="12" Foreground="#FF404040" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
+                           Text="No data loaded. Use Load Data > Default data." />
+            </DockPanel>
         </Border>
     </Grid>
 </Window>
