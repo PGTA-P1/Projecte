@@ -10,26 +10,32 @@ namespace Projecte1_WPF_.ReadData
 {
     public class Read_ElementarySectors
     {
+        private const string FORMAT = "'SECTOR [+|-] AIRBLOCK bottomFL topFL'";
+
         // Line format: SECTOR_NAME [+|-] VOLUME_NAME bottomFL topFL
         // The lines of one sector are consecutive in the file, so they are grouped without any lookup table.
-        // keep: if not null, only sectors whose name is in the set are stored (null = load everything)
+        // keep: if not null, only sectors whose name is in the set are stored (null = load everything).
+        // Throws DataFileException (file, line, what is wrong) on the first line that does not follow the format
         public static List<ElementarySector> LoadFromFile(string filePath, HashSet<string> keep = null)
         {
             var sectors = new List<ElementarySector>();
+            int lineNumber = 0, found = 0;
 
-            foreach (string rawLine in File.ReadAllLines(filePath))
+            foreach (string rawLine in File.ReadLines(filePath))
             {
+                lineNumber++;
                 string line = rawLine.Trim();
                 if (line.Length == 0 || line.StartsWith("#"))
                     continue;
 
-                string[] t = line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
-                if (t.Length < 4)
-                    continue;
+                var p = new LineParser(filePath, lineNumber, rawLine);
+                string[] t = p.Fields(null, 4, FORMAT);
 
                 int n = t.Length;
-                int topLevel = int.Parse(t[n - 1], CultureInfo.InvariantCulture);
-                int bottomLevel = int.Parse(t[n - 2], CultureInfo.InvariantCulture);
+                int topLevel = p.Int(t[n - 1], "the top flight level (last field)");
+                int bottomLevel = p.Int(t[n - 2], "the bottom flight level (one before last)");
+                if (bottomLevel > topLevel)
+                    throw p.Error($"the bottom level FL{bottomLevel} is above the top level FL{topLevel}");
                 string volumeName = t[n - 3];
 
                 // Optional sign just before the volume name
@@ -42,9 +48,10 @@ namespace Projecte1_WPF_.ReadData
                 }
 
                 if (nameEnd < 0)
-                    continue; // invalid line
+                    throw p.Error($"no sector name before the sign: expected {FORMAT}");
 
                 string sectorName = string.Join(" ", t.Take(nameEnd + 1));
+                found++;
 
                 if (keep != null && !keep.Contains(sectorName))
                     continue; // not needed
@@ -60,6 +67,8 @@ namespace Projecte1_WPF_.ReadData
                 current.Volumes.Add(new SectorVolume(sign, volumeName, bottomLevel, topLevel));
             }
 
+            if (found == 0)
+                throw new DataFileException(filePath, "no elementary sector found: is this an .sls file?");
             return sectors;
         }
     }

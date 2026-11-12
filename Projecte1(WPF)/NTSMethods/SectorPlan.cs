@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using NetTopologySuite.Algorithm.Locate;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Geometries.Utilities;
 using NetTopologySuite.Index.Quadtree;
@@ -23,6 +24,8 @@ namespace Projecte1_WPF_.NTS
         public string Name { get; set; }
         public List<List<(double Latitude, double Longitude)>> Outline { get; } = new List<List<(double Latitude, double Longitude)>>();
         public List<List<(double Latitude, double Longitude)>> MemberBorders { get; } = new List<List<(double Latitude, double Longitude)>>();
+        // Flight level of each member border (same index): where the two elementary sectors meet, for the 3D lines
+        public List<int> MemberBorderLevels { get; } = new List<int>();
         public List<List<(double Latitude, double Longitude)>> LevelSteps { get; } = new List<List<(double Latitude, double Longitude)>>();
     }
 
@@ -69,13 +72,16 @@ namespace Projecte1_WPF_.NTS
             var plan = new SectorPlan { Name = name };
             var bandShapes = new List<List<Geometry>>();
             var memberShapes = new List<Geometry>();
+            var memberBands = new List<List<(int Top, IndexedPointInAreaLocator Locator)>>();
             foreach (PlanMember m in members.Where(m => m != null))
             {
-                List<Geometry> inRange = m.Bands.Where(b => b.Bottom < flTo && b.Top > flFrom).Select(b => b.Shape).ToList();
+                var bands = m.Bands.Where(b => b.Bottom < flTo && b.Top > flFrom).ToList();
+                List<Geometry> inRange = bands.Select(b => b.Shape).ToList();
                 if (inRange.Count == 0)
                     continue;
                 bandShapes.Add(inRange);
                 memberShapes.Add(inRange.Count == m.Bands.Count ? m.Shape : Union(inRange));
+                memberBands.Add(bands.Select(b => (Math.Min(b.Top, flTo), new IndexedPointInAreaLocator(b.Shape))).ToList());
             }
             if (memberShapes.Count == 0)
                 return plan;
@@ -95,8 +101,14 @@ namespace Projecte1_WPF_.NTS
                 var drawn = new SegmentIndex();               // lines already drawn, strongest style first
                 drawn.AddLines(footprint.Boundary);
 
+                // Member borders, grouped by the level where the members meet (BorderLevel) so each 3D line has one height
                 if (memberShapes.Count > 1)
-                    AddLines(plan.MemberBorders, InnerPieces(memberShapes.Select(m => m.Boundary), drawn));
+                    foreach (var level in InnerPieces(memberShapes.Select(m => m.Boundary), drawn).GroupBy(s => BorderLevel(s, memberBands)))
+                    {
+                        AddLines(plan.MemberBorders, level.ToList());
+                        while (plan.MemberBorderLevels.Count < plan.MemberBorders.Count)
+                            plan.MemberBorderLevels.Add(level.Key);
+                    }
 
                 // Level steps: band outlines of the members with more than one band
                 AddLines(plan.LevelSteps, InnerPieces(bandShapes.Where(s => s.Count > 1).SelectMany(s => s.Select(b => b.Boundary)), drawn));
@@ -104,6 +116,7 @@ namespace Projecte1_WPF_.NTS
             catch (Exception ex)
             {
                 plan.MemberBorders.Clear();
+                plan.MemberBorderLevels.Clear();
                 plan.LevelSteps.Clear();
                 Debug.WriteLine($"[SectorPlan] '{name}': inner lines skipped: {ex.Message}");
             }
@@ -133,6 +146,44 @@ namespace Projecte1_WPF_.NTS
                     }
                 }
             return kept;
+        }
+
+        // Each side of a border piece is tested this far from its middle (degrees, ~400 m): more than the simplification
+        // tolerance, so a member whose simplified edge is slightly off the piece is still on the right side
+        private const double SIDE_DEG = 0.004;
+
+        // Flight level where the members meet along a border piece. A member present on only one side of the piece ends
+        // there; its top on that side is the top of the wall between side-by-side members, or the face between stacked
+        // ones (a lower member under a higher one: e.g. LECPOXX FL000-145 under LECPGXX FL145-245 meet at FL145). With
+        // several such members the lowest top wins (the shared wall ends there). Tops are already cut to the levels shown
+        private static int BorderLevel(LineSegment s, List<List<(int Top, IndexedPointInAreaLocator Locator)>> members)
+        {
+            Coordinate mid = s.MidPoint;
+            double length = s.Length;
+            double nx = length > 0 ? -(s.P1.Y - s.P0.Y) / length * SIDE_DEG : 0;
+            double ny = length > 0 ? (s.P1.X - s.P0.X) / length * SIDE_DEG : 0;
+            var left = new Coordinate(mid.X + nx, mid.Y + ny);
+            var right = new Coordinate(mid.X - nx, mid.Y - ny);
+
+            int level = int.MaxValue, highest = 0;
+            foreach (var bands in members)
+            {
+                int topLeft = TopAt(bands, left), topRight = TopAt(bands, right);
+                highest = Math.Max(highest, Math.Max(topLeft, topRight));
+                if ((topLeft < 0) != (topRight < 0))
+                    level = Math.Min(level, Math.Max(topLeft, topRight));
+            }
+            return level == int.MaxValue ? highest : level; // no member ends here (odd shape): the highest top
+        }
+
+        // Highest top of the member's bands containing p, -1 if none
+        private static int TopAt(List<(int Top, IndexedPointInAreaLocator Locator)> bands, Coordinate p)
+        {
+            int top = -1;
+            foreach (var b in bands)
+                if (b.Top > top && b.Locator.Locate(p) != Location.Exterior)
+                    top = b.Top;
+            return top;
         }
 
         // Kept pieces joined into the longest possible lines, short ones dropped

@@ -6,8 +6,69 @@
         xmlns:esri="http://schemas.esri.com/arcgis/runtime/2013"
         xmlns:local="clr-namespace:Projecte1_WPF_"
         mc:Ignorable="d"
-        Title="Projecte P1 - Trajectory entries and sector demand" Height="800" Width="1280" WindowStartupLocation="CenterScreen">
+        Title="Projecte P1 - Trajectory entries and sector demand" Height="800" Width="1280" WindowStartupLocation="CenterScreen"
+        StateChanged="Window_StateChanged">
+    <!-- No Windows title bar: the app's own bar (TitleBar) is the caption. The window keeps its resize border, its snap
+         and Aero shake; GlassFrameThickness 0,0,0,1 keeps the system shadow -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="36" ResizeBorderThickness="6" GlassFrameThickness="0,0,0,1" CornerRadius="0" UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
     <Window.Resources>
+        <!-- Window buttons of the title bar (minimise, maximise, full screen, close): flat, full bar height -->
+        <Style x:Key="CaptionButton" TargetType="Button">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="#FF1F2D3D" />
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#FFDCE5EE" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#FFC9D6E3" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#FFDCE5EE" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- Close: red under the mouse, as in every Windows app -->
+        <Style x:Key="CloseCaptionButton" TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="Transparent">
+                            <ContentPresenter x:Name="Glyph" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#FFC42B1C" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#FFA52618" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#FFC42B1C" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <local:SceneViewModel x:Key="SceneViewModel" />
         <!-- Pop-ups (ToolTips) of the whole window: text wrapped at a readable width -->
         <Style TargetType="ToolTip">
@@ -90,8 +151,37 @@
                         </Setter.Value>
                     </Setter>
                 </Style>
+        <!-- Small half-transparent square button on the map (home, compass, rotate, filter) -->
+        <Style x:Key="MapButton" TargetType="ButtonBase">
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="#FF34495E" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ButtonBase">
+                        <Border x:Name="Face" CornerRadius="6" Background="#CCFFFFFF" BorderBrush="#66000000" BorderThickness="1" Opacity="0.75">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Face" Property="Opacity" Value="1" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Face" Property="Background" Value="#FFD6E4F5" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Face" Property="Opacity" Value="1" />
+                                <Setter TargetName="Face" Property="BorderBrush" Value="#FF0B3D80" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
-    <Grid>
+    <Grid x:Name="RootGrid">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -102,22 +192,37 @@
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <ToolBar Grid.Row="0" Grid.ColumnSpan="2" Padding="0" FontSize="11">
-            <Label Padding="4,2" VerticalAlignment="Center">Projecte P1</Label>
-            <Separator/>
+        <!-- TITLE BAR (the window has no Windows caption, see WindowChrome): app name, the menus and Start simulation on the
+             left, the window buttons on the right; any empty part drags the window and a double-click maximises it -->
+        <Border x:Name="TitleBar" Grid.Row="0" Grid.ColumnSpan="3" Height="36" Background="#FFF3F6F9" BorderBrush="#FFD5DFE5" BorderThickness="0,0,0,1">
+        <DockPanel LastChildFill="False">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="WinMinBTN" Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="WinMin_Click" AutomationProperties.Name="Minimise" ToolTip="Minimise" />
+                <Button x:Name="WinMaxBTN" Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="WinMax_Click" AutomationProperties.Name="Maximise" ToolTip="Maximise" />
+                <Button x:Name="WinCloseBTN" Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;" Click="WinClose_Click" AutomationProperties.Name="Close" ToolTip="Close" />
+            </StackPanel>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="True">
+            <StackPanel Orientation="Horizontal" Margin="10,0,6,0" VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="False">
+                <Image x:Name="AppIconImage" Width="18" Height="18" Margin="0,0,7,0" Source="{Binding Icon, RelativeSource={RelativeSource AncestorType=Window}}" />
+                <TextBlock x:Name="AppGlyph" Text="&#xE709;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#FF1F6FD1" VerticalAlignment="Center" Margin="0,0,7,0" />
+                <TextBlock Text="Projecte P1" FontWeight="SemiBold" Foreground="#FF1F2D3D" VerticalAlignment="Center" />
+            </StackPanel>
+            <Rectangle Width="1" Height="18" Fill="#FFD5DFE5" Margin="6,0" VerticalAlignment="Center" />
             <Menu Background="Transparent" VerticalAlignment="Center">
                 <MenuItem Header="Load Data" Padding="4,2">
                     <MenuItem x:Name="DefaultDataItem" Header="Default data (Archives folder)" Click="LoadDefaultData_Click"/>
                     <Separator Opacity="0.4" Margin="0,1"/>
-                    <MenuItem Header="Your own files..." IsEnabled="False" ToolTip="Not available yet" ToolTipService.ShowOnDisabled="True"/>
+                    <MenuItem x:Name="OwnFilesItem" Header="Your own files..." Click="OwnFiles_Click"
+                              ToolTip="Choose your own input files (one by one or a .zip); each is checked before loading"/>
                 </MenuItem>
                 <!-- Opens the parameters pop-up (ParamsPopup) under it -->
                 <MenuItem x:Name="ParamsMenu" Header="Parameters" Padding="4,2" Click="ParamsMenu_Click"
                           ToolTip="Entry and demand parameters: minimum time, reentry time, integration window, sliding step" />
             </Menu>
-            <Separator/>
+            <Rectangle Width="1" Height="18" Fill="#FFD5DFE5" Margin="6,0" VerticalAlignment="Center" />
             <!-- Main action: a rounded blue button with a play icon, grey while disabled (until the data is ready). Wrapped so
                  the ToolBar does not give it its flat style -->
             <Grid>
@@ -150,14 +255,31 @@
                     </Button.Template>
                 </Button>
             </Grid>
-            <!-- Results of the simulation: appears right of Start simulation once it has been run -->
+            <!-- Analysis and results of the simulation: appear right of Start simulation once it has been run. Analysis opens
+                 the analysis window (its views are its tabs); Results has every export -->
             <Menu x:Name="ResultsBar" Background="Transparent" VerticalAlignment="Center" Visibility="Collapsed">
+                <MenuItem x:Name="AnalysisMenu" Header="Analysis" Padding="4,2" Click="Analysis_Click"
+                          ToolTip="Demand heat map, traffic over time, overload report and busiest sectors of the whole simulation" />
                 <MenuItem Header="Results" Padding="4,2">
-                    <MenuItem x:Name="ExportEntriesItem" Header="Export entries (CSV)" Click="ExportEntries_Click"/>
+                    <MenuItem x:Name="ExportEntriesItem" Header="Export entries (CSV)" Click="ExportEntries_Click"
+                              ToolTip="entries.csv: every entry into an open sector (flight, sector, entry, exit, duration…)" />
+                    <MenuItem Header="Export demand per sector and time (CSV)" Click="ExportDemand_Click"
+                              ToolTip="demand.csv: every open sector at every sliding step: window, entries, capacity, load, status" />
+                    <MenuItem Header="Export traffic over time (CSV)" Click="ExportTraffic_Click"
+                              ToolTip="traffic.csv: at every sliding step, aircraft in the airspace and open / near-limit / overloaded sectors" />
+                    <MenuItem Header="Export busiest sectors (CSV)" Click="ExportSectors_Click"
+                              ToolTip="sectors.csv: one row per sector (the Busiest sectors table): entries, open time, time near the limit and overloaded, peak load" />
+                    <MenuItem Header="Export overloads (CSV)" Click="ExportOverloads_Click"
+                              ToolTip="overloads.csv: every overload: sector, from, to, peak" />
+                    <MenuItem Header="Export all analysis (CSV)" Click="ExportAll_Click"
+                              ToolTip="demand.csv, traffic.csv, sectors.csv and overloads.csv at once" />
+                    <Separator />
                     <MenuItem Header="Open Exports folder" Click="OpenExports_Click"/>
                 </MenuItem>
             </Menu>
-        </ToolBar>
+        </StackPanel>
+        </DockPanel>
+        </Border>
 
         <esri:SceneView x:Name="MySceneView"
                 Grid.Row="1" Grid.Column="1"
@@ -167,6 +289,13 @@
         <!-- 2D map: shown instead of the 3D scene by the 2D/3D switch of the left strip -->
         <esri:MapView x:Name="MyMapView" Grid.Row="1" Grid.Column="1" IsAttributionTextVisible="False" Visibility="Collapsed" />
 
+        <!-- Short notice over the top of the map that fades out by itself (ShowNotice), e.g. "LECPGOX closed at 14:30 UTC".
+             Does not take the mouse -->
+        <Border x:Name="NoticeBox" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,14,0,0"
+                Padding="14,7" CornerRadius="6" Background="#E6202830" Opacity="0" IsHitTestVisible="False">
+            <TextBlock x:Name="NoticeText" Foreground="White" FontSize="13" />
+        </Border>
+
         <!-- MAP BUTTONS: small, half-transparent buttons in the top-right corner of the map, shown once the data is loaded.
              Home: flies back to the whole area of the ACCs, as framed after loading. Compass: its needle points north
              (turns with the view); click = north up again. Rotate (2D map only, which has no mouse rotation of its own;
@@ -174,34 +303,7 @@
         <StackPanel x:Name="MapButtons" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top"
                     Margin="0,10,10,0" Visibility="Collapsed">
             <StackPanel.Resources>
-                <Style TargetType="Button">
-                    <Setter Property="Width" Value="32" />
-                    <Setter Property="Height" Value="32" />
-                    <Setter Property="Margin" Value="0,0,0,6" />
-                    <Setter Property="Cursor" Value="Hand" />
-                    <Setter Property="Foreground" Value="#FF34495E" />
-                    <Setter Property="Template">
-                        <Setter.Value>
-                            <ControlTemplate TargetType="Button">
-                                <Border x:Name="Face" CornerRadius="6" Background="#CCFFFFFF" BorderBrush="#66000000" BorderThickness="1" Opacity="0.75">
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="Face" Property="Opacity" Value="1" />
-                                    </Trigger>
-                                    <Trigger Property="IsPressed" Value="True">
-                                        <Setter TargetName="Face" Property="Background" Value="#FFD6E4F5" />
-                                    </Trigger>
-                                    <Trigger Property="IsKeyboardFocused" Value="True">
-                                        <Setter TargetName="Face" Property="Opacity" Value="1" />
-                                        <Setter TargetName="Face" Property="BorderBrush" Value="#FF0B3D80" />
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </Setter.Value>
-                    </Setter>
-                </Style>
+                <Style TargetType="Button" BasedOn="{StaticResource MapButton}" />
             </StackPanel.Resources>
             <Button x:Name="HomeViewBTN" Click="HomeView_Click" ToolTip="Back to the whole area" AutomationProperties.Name="Back to the whole area">
                 <TextBlock Text="&#xE80F;" FontFamily="Segoe MDL2 Assets" FontSize="15" />
@@ -225,6 +327,53 @@
                 </Button>
             </StackPanel>
         </StackPanel>
+
+        <!-- MAP FILTER (top-left corner of the map, same look as the map buttons): what the timeline draws on the map,
+             aircraft, entry markers, exit markers, each on or off. The icon turns blue while something is hidden -->
+        <ToggleButton x:Name="MapFilterBTN" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10,10,0,0"
+                      Style="{StaticResource MapButton}" Visibility="Collapsed" ToolTip="Show or hide aircraft, entries and exits"
+                      AutomationProperties.Name="Map filter" IsChecked="{Binding IsOpen, ElementName=FilterPopup, Mode=TwoWay}">
+            <TextBlock x:Name="MapFilterIcon" Text="&#xE71C;" FontFamily="Segoe MDL2 Assets" FontSize="15" />
+        </ToggleButton>
+        <Popup x:Name="FilterPopup" PlacementTarget="{Binding ElementName=MapFilterBTN}" Placement="Bottom" StaysOpen="False"
+               AllowsTransparency="True" PopupAnimation="Fade" VerticalOffset="4">
+            <Border Background="White" BorderBrush="#FFC9D3DE" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,8,8">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.25" />
+                </Border.Effect>
+                <StackPanel ToolTipService.InitialShowDelay="300">
+                    <TextBlock Text="Show on the map" FontWeight="SemiBold" Margin="0,0,0,6"
+                               ToolTip="Display only: the entries, the demand and the counts in the bar do not change." />
+                    <CheckBox x:Name="ShowAircraftBox" IsChecked="True" Margin="0,2" Checked="ShowLayers_Changed" Unchecked="ShowLayers_Changed"
+                              AutomationProperties.Name="Show aircraft" ToolTip="The aircraft inside the open sectors">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="9" Height="9" Fill="Yellow" Stroke="#FF404040" StrokeThickness="1" Margin="0,0,6,0" />
+                            <TextBlock Text="Aircraft" />
+                        </StackPanel>
+                    </CheckBox>
+                    <CheckBox x:Name="ShowEntriesBox" IsChecked="True" Margin="0,2" Checked="ShowLayers_Changed" Unchecked="ShowLayers_Changed"
+                              AutomationProperties.Name="Show entries" ToolTip="A flight enters a sector (shows for 2 s of real time)">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="11" Height="11" Fill="#FF00C000" Margin="0,0,6,0" />
+                            <TextBlock Text="Entries" />
+                        </StackPanel>
+                    </CheckBox>
+                    <CheckBox x:Name="ShowExitsBox" IsChecked="True" Margin="0,2" Checked="ShowLayers_Changed" Unchecked="ShowLayers_Changed"
+                              AutomationProperties.Name="Show exits" ToolTip="A flight leaves a sector (shows for 2 s of real time)">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="9" Height="9" Fill="Red" Margin="1,0,7,0" />
+                            <TextBlock Text="Exits" />
+                        </StackPanel>
+                    </CheckBox>
+                </StackPanel>
+            </Border>
+        </Popup>
+
+        <!-- SECTOR PANEL (right column): data of the sector double-clicked; the left strip is hidden meanwhile. Closing it
+             (× or Esc) brings the strip back with all the sectors -->
+        <local:SectorPanel x:Name="SectorInfoPanel" Grid.Row="1" Grid.RowSpan="3" Grid.Column="2" Width="340" Visibility="Collapsed" />
+        <!-- COMPARISON (same column): two or more sectors ticked in the list, one column each; the strip stays -->
+        <local:ComparePanel x:Name="ComparePanelView" Grid.Row="1" Grid.RowSpan="3" Grid.Column="2" Visibility="Collapsed" />
 
         <!-- MAP strip, always visible on the left, from the toolbar to the bottom (collapsible with «): View on top (2D/3D
              switch, line options, flight levels shown), the sector list filling the rest, the colour legend at the bottom.
@@ -250,6 +399,24 @@
                                          ToolTip="Globe with the sectors as 3D volumes" AutomationProperties.Name="3D globe view" Checked="View3D_Checked" />
                         </UniformGrid>
                     </Border>
+                    <!-- What the map shows: the open sectors (default) or the traffic density of the whole simulation -->
+                    <Border Margin="0,0,0,6" Padding="2" CornerRadius="7" Background="#FFE9EEF4" BorderBrush="#FFC9D3DE" BorderThickness="1">
+                        <UniformGrid Columns="2">
+                            <RadioButton x:Name="SectorsLayerBTN" GroupName="Layer" Content="Sectors" Style="{StaticResource Segment}" IsChecked="True"
+                                         ToolTip="The open sectors at the timeline time, coloured by demand against capacity" AutomationProperties.Name="Show the sectors" />
+                            <RadioButton x:Name="ShowDensityBox" GroupName="Layer" Content="Traffic density" Style="{StaticResource Segment}"
+                                         Checked="ShowDensity_Changed" Unchecked="ShowDensity_Changed" AutomationProperties.Name="Show the traffic density"
+                                         ToolTip="Where the traffic of the ACCs flows over the whole simulation, in the flight levels shown. 2D map: aircraft-minutes per 0.05° cell. 3D globe: boxes of 0.1° x 30 flight levels at their real height (the quietest 40 % left out). The sectors are hidden meanwhile." />
+                        </UniformGrid>
+                    </Border>
+                    <!-- Colour scale of the density, shown while it is on -->
+                    <StackPanel x:Name="DensityLegend" Margin="0,0,0,6" Visibility="Collapsed">
+                        <UniformGrid x:Name="DensityColors" Rows="1" Height="10" />
+                        <DockPanel Margin="0,2,0,0">
+                            <TextBlock x:Name="DensityMax" DockPanel.Dock="Right" FontSize="10" Foreground="#FF606060" />
+                            <TextBlock Text="little" FontSize="10" Foreground="#FF606060" />
+                        </DockPanel>
+                    </StackPanel>
                     <CheckBox x:Name="MemberBordersBox" IsChecked="True" Margin="0,1" Checked="LineOptions_Changed" Unchecked="LineOptions_Changed"
                               Content="Borders inside collapsed sectors" AutomationProperties.Name="Show the borders inside collapsed sectors, white dashes"
                               ToolTip="White dashes: the borders between the elementary sectors that make up a collapsed sector. The solid black line is the outline of every sector." />
@@ -295,6 +462,7 @@
                     </StackPanel>
                 </WrapPanel>
 
+
                 <!-- SECTORS: the open sectors shown at the timeline time (flight-level filter applied), with a search box.
                      Selecting rows shows only those sectors and their aircraft on the map; double-click zooms to one;
                      Show all / Esc brings everything back. About 65 rows at most, so a DataGrid is fine (unlike the 28k
@@ -302,9 +470,10 @@
                 <DockPanel Margin="10,8,10,0">
                     <DockPanel DockPanel.Dock="Top">
                         <Button x:Name="ShowAllBTN" DockPanel.Dock="Right" Content="Show all" Padding="8,0" Visibility="Collapsed"
-                                Click="ShowAll_Click" ToolTip="Show all the sectors and aircraft again (Esc)" />
+                                Click="ShowAll_Click" ToolTip="Untick everything and show all the sectors and aircraft again (Esc)" />
+                        <TextBlock x:Name="TickedText" DockPanel.Dock="Right" Margin="0,0,8,0" VerticalAlignment="Center" FontSize="11" Foreground="#FF5A6773" />
                         <TextBlock Text="Sectors" FontWeight="SemiBold" VerticalAlignment="Center"
-                                   ToolTip="Open sectors shown at the timeline time. Click a row (Ctrl or Shift for several) to show only those sectors and their aircraft; double-click to zoom to it. Double-click a sector on the map does the same." />
+                                   ToolTip="Open sectors shown at the timeline time. Tick sectors to show only them and their aircraft; with two or more ticked a comparison opens on the right. Double-click a row (or a sector on the map) to zoom to it and open its panel." />
                     </DockPanel>
                     <Grid DockPanel.Dock="Top" Margin="0,4">
                         <TextBox x:Name="SectorSearchBox" TextChanged="SectorSearch_TextChanged" VerticalContentAlignment="Center" Padding="2,1"
@@ -322,26 +491,37 @@
                             </TextBlock.Style>
                         </TextBlock>
                     </Grid>
-                    <DataGrid x:Name="SectorGrid" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" SelectionMode="Extended"
+                    <DataGrid x:Name="SectorGrid" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" SelectionMode="Single"
                               SelectionUnit="FullRow" CanUserAddRows="False" CanUserResizeRows="False" GridLinesVisibility="None" FontSize="11"
                               BorderBrush="#FFC9D3DE" Background="White" RowBackground="White" AlternatingRowBackground="#FFF6F8FB"
-                              SelectionChanged="SectorGrid_SelectionChanged" MouseDoubleClick="SectorGrid_MouseDoubleClick"
+                              MouseDoubleClick="SectorGrid_MouseDoubleClick"
                               AutomationProperties.Name="Open sectors">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Binding="{Binding Sector}" Width="78">
+                            <!-- Tick = shown on the map (none ticked = all); two or more open the comparison -->
+                            <DataGridTemplateColumn Width="24" SortMemberPath="IsChecked">
+                                <DataGridTemplateColumn.Header><TextBlock Text="&#xE73E;" FontFamily="Segoe MDL2 Assets" FontSize="10" ToolTip="Ticked sectors are the only ones shown on the map; tick two or more to compare them" /></DataGridTemplateColumn.Header>
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Checked="SectorCheck_Changed" Unchecked="SectorCheck_Changed"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Focusable="True" AutomationProperties.Name="{Binding Sector, StringFormat=Show {0}}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Binding="{Binding Sector}" Width="66">
                                 <DataGridTextColumn.Header><TextBlock Text="Sector" ToolTip="Sector of the open configuration (elementary or collapsed)" /></DataGridTextColumn.Header>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Binding="{Binding Acc}" Width="62">
+                            <DataGridTextColumn Binding="{Binding Acc}" Width="61">
                                 <DataGridTextColumn.Header><TextBlock Text="ACC" ToolTip="ACC whose configuration has the sector open" /></DataGridTextColumn.Header>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Binding="{Binding Configuration}" Width="40">
+                            <DataGridTextColumn Binding="{Binding Configuration}" Width="36">
                                 <DataGridTextColumn.Header><TextBlock Text="Cfg" ToolTip="Configuration open in that ACC now" /></DataGridTextColumn.Header>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Binding="{Binding Demand}" Width="34">
+                            <DataGridTextColumn Binding="{Binding Demand}" Width="33">
                                 <DataGridTextColumn.Header><TextBlock Text="Dem" ToolTip="Demand: entries in the current window [start, end)" /></DataGridTextColumn.Header>
                                 <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Right" /></Style></DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Binding="{Binding CapacityText}" SortMemberPath="CapacitySort" Width="38">
+                            <DataGridTextColumn Binding="{Binding CapacityText}" SortMemberPath="CapacitySort" Width="36">
                                 <DataGridTextColumn.Header><TextBlock Text="Cap/h" ToolTip="Nominal capacity per hour (capacity file); none = no limit" /></DataGridTextColumn.Header>
                                 <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Right" /></Style></DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
@@ -420,9 +600,58 @@
         </Button>
 
         <!-- Timeline: relevant trajectories played in time order; hidden until there is something to simulate -->
+        <!-- Media-player style: round play/pause/replay button (icon from SetPlaying, its name for screen readers), speed as a
+             pill opening a menu, a thin track with the played part blue and a round thumb, the time in bold -->
         <Border x:Name="TimelineBar" Grid.Row="2" Grid.Column="1" Visibility="Collapsed"
-                BorderBrush="#FFD5DFE5" BorderThickness="0,1,0,0" Background="#FFEEF5FD">
-            <Grid Margin="6,4">
+                BorderBrush="#FFD5DFE5" BorderThickness="0,1,0,0" Background="White">
+            <Grid Margin="8,5">
+                <Grid.Resources>
+                    <Style x:Key="TrackPart" TargetType="RepeatButton">
+                        <Setter Property="Focusable" Value="False" />
+                        <Setter Property="IsTabStop" Value="False" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="RepeatButton">
+                                    <Grid Background="Transparent">
+                                        <Border Height="4" CornerRadius="2" Background="{TemplateBinding Background}" VerticalAlignment="Center" />
+                                    </Grid>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                    <Style x:Key="TimelineSlider" TargetType="Slider">
+                        <Setter Property="IsMoveToPointEnabled" Value="True" />
+                        <Setter Property="Cursor" Value="Hand" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Slider">
+                                    <Track x:Name="PART_Track" Height="22">
+                                        <Track.DecreaseRepeatButton>
+                                            <RepeatButton Style="{StaticResource TrackPart}" Background="#FF1F6FD1" Command="Slider.DecreaseLarge" />
+                                        </Track.DecreaseRepeatButton>
+                                        <Track.IncreaseRepeatButton>
+                                            <RepeatButton Style="{StaticResource TrackPart}" Background="#FFD5DFE5" Command="Slider.IncreaseLarge" />
+                                        </Track.IncreaseRepeatButton>
+                                        <Track.Thumb>
+                                            <Thumb Width="14" Height="14">
+                                                <Thumb.Template>
+                                                    <ControlTemplate TargetType="Thumb">
+                                                        <Ellipse x:Name="Dot" Fill="White" Stroke="#FF1F6FD1" StrokeThickness="3" />
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="Dot" Property="Fill" Value="#FFD6E4F5" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Thumb.Template>
+                                            </Thumb>
+                                        </Track.Thumb>
+                                    </Track>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Grid.Resources>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
@@ -430,10 +659,60 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <Button x:Name="PlayBTN" Grid.Column="0" Content="Play" MinWidth="60" Padding="8,2" Click="PlayBTN_Click" />
-                <ComboBox x:Name="SpeedBox" Grid.Column="1" Margin="6,0" MinWidth="70" SelectionChanged="SpeedBox_SelectionChanged" />
-                <Slider x:Name="TimeSlider" Grid.Column="2" Margin="6,0" VerticalAlignment="Center" ValueChanged="TimeSlider_ValueChanged" />
-                <TextBlock x:Name="TimeText" Grid.Column="3" Margin="6,0" VerticalAlignment="Center" FontFamily="Consolas" />
+                <Button x:Name="PlayBTN" Grid.Column="0" Width="32" Height="32" Click="PlayBTN_Click" Cursor="Hand"
+                        AutomationProperties.Name="Play" ToolTip="Play / pause (from the start again at the end)">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Grid>
+                                <Ellipse x:Name="Disc" Fill="#FF1F6FD1" />
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Disc" Property="Fill" Value="#FF1A5FB4" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Disc" Property="Fill" Value="#FF154C91" />
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter TargetName="Disc" Property="Stroke" Value="#FF0B2E5E" />
+                                    <Setter TargetName="Disc" Property="StrokeThickness" Value="2" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <TextBlock x:Name="PlayIcon" Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="White" Margin="1,0,0,0" />
+                </Button>
+                <!-- Speed: a pill that opens the list of speeds (simulated seconds per real second) -->
+                <Button x:Name="SpeedBTN" Grid.Column="1" Margin="8,0,4,0" Height="24" Padding="10,0" Cursor="Hand" Click="SpeedBTN_Click"
+                        AutomationProperties.Name="Playback speed" ToolTip="Playback speed: simulated seconds per real second">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Pill" CornerRadius="12" Background="#FFEEF2F7" BorderBrush="#FFC9D3DE" BorderThickness="1" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Pill" Property="Background" Value="#FFD6E4F5" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="SpeedText" Text="60x" FontWeight="SemiBold" Foreground="#FF34495E" />
+                        <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="8" Margin="6,1,0,0" VerticalAlignment="Center" Foreground="#FF34495E" />
+                    </StackPanel>
+                    <Button.ContextMenu>
+                        <ContextMenu x:Name="SpeedMenu" />
+                    </Button.ContextMenu>
+                </Button>
+                <!-- Open periods of the sector zoomed to (double-click): green bands under the slider track, with a tick at
+                     each opening and closing (DrawOpenPeriods). Behind the slider, so it does not take the mouse -->
+                <Canvas x:Name="OpenPeriodMarks" Grid.Column="2" Margin="6,0" IsHitTestVisible="False" ClipToBounds="True"
+                        SizeChanged="OpenPeriodMarks_SizeChanged" />
+                <Slider x:Name="TimeSlider" Grid.Column="2" Margin="6,0" VerticalAlignment="Center" Style="{StaticResource TimelineSlider}"
+                        ValueChanged="TimeSlider_ValueChanged" AutomationProperties.Name="Simulation time" />
+                <TextBlock x:Name="TimeText" Grid.Column="3" Margin="8,0" VerticalAlignment="Center" FontFamily="Consolas" FontSize="13" FontWeight="Bold" Foreground="#FF1F2D3D" />
                 <!-- Fixed length (AirDescription pads every field), so the slider does not change width while playing -->
                 <TextBlock x:Name="AirText" Grid.Column="4" VerticalAlignment="Center" FontFamily="Consolas"
                            ToolTip="Aircraft shown (or when the next one appears) · open sectors shown · sectors near the limit (80-100 %) · overloaded sectors (&gt; 100 %) · current demand window" />

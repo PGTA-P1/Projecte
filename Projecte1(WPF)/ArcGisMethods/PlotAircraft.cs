@@ -129,6 +129,11 @@ namespace Projecte1_WPF_.ArcGisMethods
             set { foreach (GraphicsOverlay o in Overlays()) o.IsVisible = value; }
         }
 
+        // Aircraft dots, entry markers and exit markers can each be hidden (map filter button)
+        public bool ShowAircraft { get => _aircraft.IsVisible; set => _aircraft.IsVisible = value; }
+        public bool ShowEntries { get => _entries.IsVisible; set => _entries.IsVisible = value; }
+        public bool ShowExits { get => _exits.IsVisible; set => _exits.IsVisible = value; }
+
         public void ClearMarkers()
         {
             _entries.Graphics.Clear();

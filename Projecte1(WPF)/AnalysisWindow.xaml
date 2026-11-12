@@ -1,0 +1,100 @@
+<Window x:Class="Projecte1_WPF_.AnalysisWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Analysis" Height="640" Width="1000" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <!-- ANALYSIS of the whole simulation (toolbar Analysis button, shown after Start simulation), one tab per view, all
+         from MainWindow's AirspaceTimeline: demand heat map, traffic over time, overload report, busiest sectors. The blue
+         line follows the timeline; a click (or a drag on the traffic chart) moves the timeline there. Exports are in the
+         Results menu -->
+    <TabControl x:Name="Tabs" Margin="4" ToolTipService.InitialShowDelay="300" ToolTipService.ShowDuration="20000">
+        <TabItem Header="Demand heat map">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="4,4,4,6">
+                    <ComboBox x:Name="SortBox" DockPanel.Dock="Right" Width="210" SelectedIndex="0" SelectionChanged="SortBox_SelectionChanged"
+                              AutomationProperties.Name="Order of the sectors">
+                        <ComboBoxItem Content="By ACC, then name" />
+                        <ComboBoxItem Content="Most time overloaded first" />
+                        <ComboBoxItem Content="Most time open first" />
+                    </ComboBox>
+                    <TextBlock x:Name="HeatReadout" VerticalAlignment="Center" Text="Every sector against time, coloured as on the map; grey = closed. Point at a cell for its values, click to go there; Ctrl + wheel zooms the time." TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Canvas x:Name="HeatLabels" Grid.Column="0" />
+                        <Canvas x:Name="HeatCanvas" Grid.Column="1" HorizontalAlignment="Left" VerticalAlignment="Top" Background="Transparent" Cursor="Hand"
+                                MouseMove="HeatCanvas_MouseMove" MouseLeftButtonDown="HeatCanvas_MouseLeftButtonDown" PreviewMouseWheel="HeatCanvas_PreviewMouseWheel"
+                                AutomationProperties.Name="Demand heat map">
+                            <Image x:Name="HeatImage" Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                        </Canvas>
+                    </Grid>
+                </ScrollViewer>
+            </DockPanel>
+        </TabItem>
+        <TabItem Header="Traffic over time">
+            <DockPanel>
+                <TextBlock x:Name="TrafficSummary" DockPanel.Dock="Top" Margin="4,4,4,2" TextWrapping="Wrap" />
+                <!-- Values at the timeline time (the blue line), not at the mouse -->
+                <Border DockPanel.Dock="Bottom" Margin="4,2,4,4" Padding="8,4" CornerRadius="4" Background="#FFF6F8FB" BorderBrush="#FFD5DFE5" BorderThickness="1">
+                    <TextBlock x:Name="TrafficReadout" TextWrapping="Wrap" />
+                </Border>
+                <Canvas x:Name="TrafficChart" Margin="4" Background="Transparent" ClipToBounds="True" Cursor="Hand"
+                        SizeChanged="TrafficChart_SizeChanged" MouseMove="TrafficChart_MouseMove" MouseLeave="TrafficChart_MouseLeave"
+                        MouseLeftButtonDown="TrafficChart_MouseLeftButtonDown" MouseLeftButtonUp="TrafficChart_MouseLeftButtonUp"
+                        MouseWheel="TrafficChart_MouseWheel" LostMouseCapture="TrafficChart_LostMouseCapture" AutomationProperties.Name="Traffic over time chart" />
+            </DockPanel>
+        </TabItem>
+        <TabItem Header="Overload report">
+            <DockPanel>
+                <TextBlock x:Name="OverloadSummary" DockPanel.Dock="Top" Margin="4,4,4,6" TextWrapping="Wrap" />
+                <DataGrid x:Name="OverloadGrid" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" SelectionMode="Single"
+                          GridLinesVisibility="None" AlternatingRowBackground="#FFF6F8FB" MouseDoubleClick="OverloadGrid_MouseDoubleClick"
+                          AutomationProperties.Name="Overloads" ToolTip="Double-click a row to go to that overload on the map">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Sector" Binding="{Binding Sector}" Width="90" />
+                        <DataGridTextColumn Header="ACC" Binding="{Binding Acc}" Width="80" />
+                        <DataGridTextColumn Header="From (UTC)" Binding="{Binding From, StringFormat=dd/MM HH:mm}" Width="90" />
+                        <DataGridTextColumn Header="To" Binding="{Binding To, StringFormat=dd/MM HH:mm}" Width="90" />
+                        <DataGridTextColumn Header="Duration" Binding="{Binding DurationText}" SortMemberPath="Duration" Width="80" />
+                        <DataGridTextColumn Header="Peak entries" Binding="{Binding PeakDemand}" Width="80" />
+                        <DataGridTextColumn Header="Capacity / window" Binding="{Binding CapacityPerWindow, StringFormat=0.#}" Width="110" />
+                        <DataGridTextColumn Header="Peak load" Binding="{Binding PeakLoadText}" SortMemberPath="PeakLoad" Width="80" />
+                        <DataGridTextColumn Header="Peak window" Binding="{Binding PeakWindowText}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </TabItem>
+        <TabItem Header="Busiest sectors">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Margin="4,4,4,6" TextWrapping="Wrap"
+                           Text="Every sector open at some time, over the whole simulation. Click a column to sort; double-click a row to go to its peak." />
+                <DataGrid x:Name="BusiestGrid" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" SelectionMode="Single"
+                          GridLinesVisibility="None" AlternatingRowBackground="#FFF6F8FB" MouseDoubleClick="BusiestGrid_MouseDoubleClick"
+                          AutomationProperties.Name="Busiest sectors">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Sector" Binding="{Binding Sector}" Width="90" />
+                        <DataGridTextColumn Header="ACC" Binding="{Binding Acc}" Width="80" />
+                        <DataGridTextColumn Header="Entries" Binding="{Binding Entries}" Width="60" />
+                        <DataGridTextColumn Header="Open" Binding="{Binding OpenText}" SortMemberPath="OpenMinutes" Width="80" />
+                        <DataGridTextColumn Header="Avg inside" Binding="{Binding AverageText}" SortMemberPath="AverageMinutes" Width="75" />
+                        <DataGridTextColumn Header="Peak load" Binding="{Binding PeakText}" SortMemberPath="PeakLoad" Width="70" />
+                        <DataGridTextColumn Header="Near limit" Binding="{Binding NearText}" SortMemberPath="NearMinutes" Width="80" />
+                        <DataGridTemplateColumn Header="Overloaded" SortMemberPath="OverMinutes" Width="*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Rectangle Width="{Binding OverBar}" Height="10" Fill="#FFDC1414" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding OverText}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </TabItem>
+    </TabControl>
+</Window>

@@ -401,7 +401,14 @@ namespace Projecte1_WPF_.ArcGisMethods
         public bool IsVisible
         {
             get => _elementary.IsVisible;
-            set { _elementary.IsVisible = value; _collapsed.IsVisible = value; _labels.IsVisible = value; }
+            set
+            {
+                _elementary.IsVisible = value;
+                _collapsed.IsVisible = value;
+                _labels.IsVisible = value;
+                _plan2D.IsVisible = value;
+                _plan3D.IsVisible = value;
+            }
         }
 
         public void Clear()

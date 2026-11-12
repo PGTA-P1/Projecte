@@ -126,6 +126,13 @@ namespace Projecte1_WPF_.Simulation
             return result;
         }
 
+        // Every flight with its stays in open sectors (sorted, joined): the times it is drawn on the map
+        public IEnumerable<(Trajectory Flight, IReadOnlyList<Interval> Inside)> Stays()
+        {
+            foreach (VisibleFlight f in _flights)
+                yield return (f.Flight, f.Inside);
+        }
+
         private static bool IsInside(VisibleFlight f, DateTime t)
         {
             foreach (Interval stay in f.Inside)

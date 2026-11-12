@@ -14,21 +14,26 @@ namespace Projecte1_WPF_.ReadData
         {
             // Validación de existencia del archivo en la ruta indicada
             if (!File.Exists(filePath))
-            {
-                throw new FileNotFoundException($"No se encontró el archivo especificado en la ruta: {filePath}");
-            }
+                throw new DataFileException(filePath, "the file does not exist");
 
             var result = new SpcFile();
             Airspace currentAirspace = null;
+            int lineNumber = 0;
 
             // Lectura por flujo de líneas (Streaming) para asegurar bajo consumo de memoria RAM
             foreach (var rawLine in File.ReadLines(filePath))
             {
+                lineNumber++;
                 // Eliminar espacios adicionales al inicio y al final de la línea
                 var line = rawLine.Trim();
 
                 // Descartar líneas vacías
                 if (string.IsNullOrWhiteSpace(line))
+                    continue;
+                var p = new LineParser(filePath, lineNumber, rawLine);
+
+                // The file may start with a line holding only the number of airspaces
+                if (lineNumber == 1 && int.TryParse(line, out _))
                     continue;
 
                 // --------------------------------------------------------------------------
@@ -59,6 +64,9 @@ namespace Projecte1_WPF_.ReadData
                 // --- Procesar Registro 'A' (Espacio Aéreo Principal)[cite: 3] ---
                 if (recordType.Equals("A", StringComparison.OrdinalIgnoreCase))
                 {
+                    p.Fields(';', 4, "an airspace 'A;ID;NAME;TYPE;…'");
+                    if (GetPart(parts, 1).Length == 0)
+                        throw p.Error("the airspace id (2nd field) is empty");
                     currentAirspace = new Airspace
                     {
                         Id = GetPart(parts, 1),                 // Campo 2: Airspace ID[
@@ -73,19 +81,25 @@ namespace Projecte1_WPF_.ReadData
                 // --- Procesar Registro 'S' (Sub-espacio pertenenciente al último 'A') ---
                 else if (recordType.Equals("S", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (currentAirspace != null)
+                    if (currentAirspace == null)
+                        throw p.Error("a member line 'S;…' comes before any airspace line 'A;…'");
+                    p.Fields(';', 2, "a member 'S;NAME;TYPE'");
+                    if (GetPart(parts, 1).Length == 0)
+                        throw p.Error("the member name (2nd field) is empty");
+                    var sector = new Sector
                     {
-                        var sector = new Sector
-                        {
-                            Name = GetPart(parts, 1), // Campo 2: Nombre del sub-espacio
-                            Type = GetPart(parts, 2)  // Campo 3: Tipo del sub-espacio
-                        };
+                        Name = GetPart(parts, 1), // Campo 2: Nombre del sub-espacio
+                        Type = GetPart(parts, 2)  // Campo 3: Tipo del sub-espacio
+                    };
 
-                        currentAirspace.Sectors.Add(sector);
-                    }
+                    currentAirspace.Sectors.Add(sector);
                 }
+                else
+                    throw p.Error($"unknown record '{recordType}': lines must start with 'A;' (airspace) or 'S;' (its members)");
             }
 
+            if (result.Airspaces.Count == 0)
+                throw new DataFileException(filePath, "no airspace line 'A;…' found: is this an .spc file?");
             return result;
         }
 

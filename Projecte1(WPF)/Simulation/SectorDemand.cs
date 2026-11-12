@@ -41,6 +41,11 @@ namespace Projecte1_WPF_.Simulation
         private readonly DateTime _firstStart;
 
         public double WindowMinutes { get { return _window.TotalMinutes; } }
+        public TimeSpan Window { get { return _window; } }
+        public TimeSpan Step { get { return _step; } }
+
+        // Start of the first window: the simulation start rounded down to the step. Later windows start every Step
+        public DateTime FirstStart { get { return _firstStart; } }
 
         // entries: only Level Open counts (entries into the sectors open per the opening scheme, also those opened while
         // the flight was inside). start: start of the simulation (first window)

@@ -1,0 +1,76 @@
+<Window x:Class="Projecte1_WPF_.DataFilesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Load your own files" Height="640" Width="860" MinHeight="420" MinWidth="640"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" AllowDrop="True" Drop="Window_Drop" DragOver="Window_DragOver"
+        Background="White">
+    <!-- YOUR OWN FILES (Load Data > Your own files): one row per input of a data set. Files are added one by one, several
+         at once, from a .zip, or dropped on the window; each is identified by its extension, copied to the session folder
+         (UserDataFolder) and checked at once with its reader: OK with what it holds, or the exact error (file, line, what is
+         wrong). A missing or wrong file can be chosen again (Choose / Replace) or taken from the defaults. Load is enabled
+         when every row is OK -->
+    <DockPanel Margin="14,12">
+        <StackPanel DockPanel.Dock="Top">
+            <TextBlock Text="Your data files" FontSize="17" FontWeight="SemiBold" />
+            <TextBlock TextWrapping="Wrap" Foreground="#FF606060" Margin="0,2,0,8"
+                       Text="Add the eight inputs one by one, several at once, or as a .zip (you can also drop them here). Each file is recognised by its extension and checked as soon as it is added." />
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <Button Content="_Add files…" Padding="12,3" Click="AddFiles_Click" ToolTip="Pick one or more data files (or .zip files)" />
+                <Button Content="Add ._zip…" Padding="12,3" Margin="8,0,0,0" Click="AddZip_Click" ToolTip="Pick a .zip with the data files (folders inside are fine)" />
+                <Button x:Name="UseDefaultsBTN" Content="Use defaults for the missing ones" Padding="12,3" Margin="8,0,0,0" Click="UseDefaults_Click"
+                        ToolTip="Every input without a file takes the default one of the Archives folder" />
+            </StackPanel>
+            <!-- What happened with the last files added: unknown types, duplicates (amber) -->
+            <Border x:Name="NotesBox" Visibility="Collapsed" Background="#FFFFF6DD" BorderBrush="#FFE8C770" BorderThickness="1" CornerRadius="4" Padding="8,5" Margin="0,0,0,8">
+                <TextBlock x:Name="NotesText" TextWrapping="Wrap" />
+            </Border>
+        </StackPanel>
+
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+            <Button x:Name="LoadBTN" DockPanel.Dock="Right" Content="_Load" Padding="20,4" Margin="8,0,0,0" IsDefault="True" IsEnabled="False" Click="Load_Click" />
+            <Button DockPanel.Dock="Right" Content="Cancel" Padding="14,4" IsCancel="True" />
+            <TextBlock x:Name="SummaryText" TextWrapping="Wrap" VerticalAlignment="Center" />
+        </DockPanel>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl x:Name="Rows">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border BorderBrush="#FFE1E7EE" BorderThickness="0,0,0,1" Padding="0,7">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="30" />
+                                    <ColumnDefinition Width="210" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <!-- State: ✓ OK, ✗ error, … checking, ! missing -->
+                                <Border Width="20" Height="20" CornerRadius="10" Background="{Binding StateBrush}" VerticalAlignment="Top" Margin="0,1,0,0">
+                                    <TextBlock Text="{Binding StateSymbol}" Foreground="White" FontWeight="Bold" FontSize="11"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="4,0,10,0">
+                                    <TextBlock FontWeight="SemiBold">
+                                        <Run Text="{Binding Info.Title, Mode=OneWay}" />
+                                        <Run Text="{Binding Info.Extension, Mode=OneWay}" Foreground="#FF8A97A6" FontWeight="Normal" />
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding Info.Description}" FontSize="11" Foreground="#FF606060" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="{Binding FileText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" />
+                                    <TextBlock Text="{Binding Message}" Foreground="{Binding MessageBrush}" TextWrapping="Wrap" FontSize="11.5" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Top" Margin="8,0,0,0">
+                                    <Button Content="{Binding ChooseText}" Padding="10,2" Click="Choose_Click" Tag="{Binding}"
+                                            ToolTip="Choose the file for this input (it replaces the current one)" />
+                                    <Button Content="Use default" Padding="10,2" Margin="6,0,0,0" Click="UseDefault_Click" Tag="{Binding}"
+                                            ToolTip="Take the default file of the Archives folder" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

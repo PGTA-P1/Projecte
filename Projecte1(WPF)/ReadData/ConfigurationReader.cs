@@ -11,11 +11,14 @@ namespace Projecte1_WPF_.ReadData
     /// the elementary list or the collapsed list of its configuration. The two lists are independent.
     public class ConfigurationReader
     {
-        // accs: if not null, only the lines of those ACCs are read (null = all the ACCs)
+        private const string FORMAT = "'ACC;CONFIGURATION;SECTOR'";
+
+        // accs: if not null, only the lines of those ACCs are read (null = all the ACCs).
+        // Throws DataFileException (file, line, what is wrong) on the first line that does not follow the format
         public ConfigurationList Read(string filePath, List<ElementarySector> elementary, List<Airspace> collapsed, HashSet<string> accs = null)
         {
             if (!File.Exists(filePath))
-                throw new FileNotFoundException($"No se encontro el archivo: {filePath}");
+                throw new DataFileException(filePath, "the file does not exist");
 
             // Name -> sector, so each of the ~35,000 lines is resolved without scanning the lists
             var elementaryByName = new Dictionary<string, ElementarySector>(StringComparer.OrdinalIgnoreCase);
@@ -28,25 +31,28 @@ namespace Projecte1_WPF_.ReadData
 
             var result = new ConfigurationList();
             var byKey = new Dictionary<string, Configuration>(StringComparer.OrdinalIgnoreCase);
+            int lineNumber = 0, found = 0;
 
             foreach (var rawLine in File.ReadLines(filePath))
             {
+                lineNumber++;
                 var line = rawLine.Trim();
 
                 // Omitir lineas vacias o la cabecera de metadatos (que empieza por '#')
                 if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#"))
                     continue;
 
-                var parts = line.Split(';');
-                if (parts.Length < 3)
-                    continue;
-
+                var p = new LineParser(filePath, lineNumber, rawLine);
+                var parts = p.Fields(';', 3, FORMAT);
                 string accName = parts[0].Trim();
-                if (accs != null && !accs.Contains(accName))
-                    continue; // ACC not requested
-
                 string configName = parts[1].Trim();
                 string sectorName = parts[2].Trim();
+                if (accName.Length == 0 || configName.Length == 0 || sectorName.Length == 0)
+                    throw p.Error($"the ACC, the configuration and the sector cannot be empty: expected {FORMAT}");
+                found++;
+
+                if (accs != null && !accs.Contains(accName))
+                    continue; // ACC not requested
 
                 // One Configuration per (ACC, name); its lines are not guaranteed to be consecutive
                 string key = accName + ";" + configName;
@@ -68,6 +74,8 @@ namespace Projecte1_WPF_.ReadData
                 }
             }
 
+            if (found == 0)
+                throw new DataFileException(filePath, $"no configuration line found: expected lines {FORMAT}");
             return result;
         }
     }

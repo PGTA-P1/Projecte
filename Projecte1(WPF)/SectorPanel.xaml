@@ -1,0 +1,189 @@
+<UserControl x:Class="Projecte1_WPF_.SectorPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="White">
+    <!-- SECTOR PANEL (right of the map, opened by double-clicking a sector): who it is, how it is now, its demand against
+         its capacity over the simulation, summary figures and the aircraft inside it. Filled by MainWindow (SetSector once,
+         SetNow at every timeline update) -->
+    <UserControl.Resources>
+        <Style x:Key="Heading" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,10,0,4" />
+        </Style>
+        <Style x:Key="Small" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#FF606060" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <!-- Flat icon buttons of the header (export, pause at closing, close); a pressed toggle is light blue -->
+        <Style x:Key="HeaderIcon" TargetType="ButtonBase">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Margin" Value="2,0,0,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#FF34495E" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ButtonBase">
+                        <Border x:Name="Face" CornerRadius="4" Background="Transparent" BorderBrush="Transparent" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Face" Property="Background" Value="#FFDCE7F3" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Face" Property="BorderBrush" Value="#FF0B3D80" />
+                            </Trigger>
+                            <Trigger Property="ToggleButton.IsChecked" Value="True">
+                                <Setter TargetName="Face" Property="Background" Value="#FFC9DCF3" />
+                                <Setter TargetName="Face" Property="BorderBrush" Value="#FF1F6FD1" />
+                                <Setter Property="Foreground" Value="#FF1F6FD1" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- A small on/off switch with its label on the right: blue track and knob on the right = on -->
+        <Style x:Key="Switch" TargetType="ToggleButton">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#FF34495E" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <StackPanel Orientation="Horizontal" Background="Transparent">
+                            <Border x:Name="Track" Width="28" Height="16" CornerRadius="8" Background="#FFC9D3DE" VerticalAlignment="Center">
+                                <Ellipse x:Name="Knob" Width="12" Height="12" Fill="White" HorizontalAlignment="Left" Margin="2,0" />
+                            </Border>
+                            <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="#FF1F6FD1" />
+                                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Track" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Track" Property="BorderBrush" Value="#FF0B3D80" />
+                                <Setter TargetName="Track" Property="BorderThickness" Value="1.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    <Border BorderBrush="#FFD5DFE5" BorderThickness="1,0,0,0">
+        <DockPanel ToolTipService.InitialShowDelay="300" ToolTipService.ShowDuration="20000">
+            <!-- Header: name; icon buttons: export the sector to Excel, pause when it closes (on = pressed), close -->
+            <Grid DockPanel.Dock="Top" Background="#FFEEF5FD">
+                <StackPanel Margin="12,8,72,8">
+                    <TextBlock x:Name="NameText" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock x:Name="KindText" Style="{StaticResource Small}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,8,0">
+                    <Button x:Name="ExportBTN" Style="{StaticResource HeaderIcon}" Content="&#xE896;" Click="Export_Click"
+                            ToolTip="Export all the data of this sector to Excel (one sheet each: summary, demand over time, entries, flows, flight levels)"
+                            AutomationProperties.Name="Export the sector to Excel" />
+                    <Button x:Name="CloseBTN" Style="{StaticResource HeaderIcon}" Content="&#xE711;" FontSize="12" Click="Close_Click"
+                            ToolTip="Close the sector panel and show all the sectors again (Esc)" AutomationProperties.Name="Close the sector panel" />
+                </StackPanel>
+            </Grid>
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="12,4,12,12">
+                    <TextBlock x:Name="InfoText" Style="{StaticResource Small}" Margin="0,4,0,0" />
+
+                    <!-- Now: configuration, window, demand against capacity -->
+                    <Border x:Name="NowBox" Margin="0,8,0,0" Padding="8,6" CornerRadius="5" Background="#FFF6F8FB" BorderBrush="#FFD5DFE5" BorderThickness="1">
+                        <StackPanel>
+                            <TextBlock x:Name="NowTitle" FontWeight="SemiBold" />
+                            <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                <Border x:Name="NowPill" CornerRadius="3" Padding="6,1" Margin="0,0,8,0">
+                                    <TextBlock x:Name="NowLoad" FontWeight="SemiBold" />
+                                </Border>
+                                <TextBlock x:Name="NowDemand" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <!-- What playback does when this sector closes, said in words (it used to be a bare pause icon
+                                 in the header) -->
+                            <Border BorderBrush="#FFE1E8EE" BorderThickness="0,1,0,0" Margin="0,7,0,0" Padding="0,6,0,0">
+                                <ToggleButton x:Name="PauseToggle" Style="{StaticResource Switch}" IsChecked="True"
+                                              AutomationProperties.Name="Pause playback when this sector closes"
+                                              ToolTip="On: playback stops at the moment this sector closes, so you see it happen; press Play to go on. Off: playback goes on and the map shows all the sectors until it opens again. Either way a short notice appears."
+                                              Content="Pause playback when it closes" />
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="Demand vs capacity" Style="{StaticResource Heading}"
+                               ToolTip="Entries in the window shown at each time (one bar per sliding step), coloured as on the map; dark line = aircraft inside the sector; dashed line = capacity per window; grey = closed; blue line = timeline time. Click or drag to move the time; mouse wheel zooms, Shift + wheel moves, double-click shows all." />
+                    <Canvas x:Name="Chart" Height="160" Background="Transparent" ClipToBounds="True" Cursor="Hand"
+                            SizeChanged="Chart_SizeChanged" MouseMove="Chart_MouseMove" MouseLeave="Chart_MouseLeave"
+                            MouseLeftButtonDown="Chart_MouseLeftButtonDown" MouseLeftButtonUp="Chart_MouseLeftButtonUp" MouseWheel="Chart_MouseWheel" LostMouseCapture="Chart_LostMouseCapture"
+                            AutomationProperties.Name="Demand against capacity chart" />
+                    <!-- Legend -->
+                    <WrapPanel Margin="0,2,0,0">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,10,0">
+                            <Rectangle Width="8" Height="10" Fill="#FF00AA00" Margin="0,0,1,0" /><Rectangle Width="8" Height="10" Fill="#FFF0C800" Margin="0,0,1,0" /><Rectangle Width="8" Height="10" Fill="#FFDC1414" />
+                            <TextBlock Text=" entries in the window" Style="{StaticResource Small}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,10,0">
+                            <Rectangle Width="14" Height="2" Fill="#FF2C3E50" VerticalAlignment="Center" />
+                            <TextBlock Text=" aircraft inside" Style="{StaticResource Small}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Line X1="0" X2="14" Y1="6" Y2="6" Stroke="Black" StrokeDashArray="3 2" />
+                            <TextBlock Text=" capacity" Style="{StaticResource Small}" />
+                        </StackPanel>
+                    </WrapPanel>
+                    <TextBlock x:Name="ChartReadout" Style="{StaticResource Small}" Margin="0,2,0,0" Text=" " />
+
+                    <TextBlock Text="Over the simulation" Style="{StaticResource Heading}" />
+                    <Grid x:Name="Figures">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                    </Grid>
+
+                    <TextBlock Text="Traffic flows" Style="{StaticResource Heading}"
+                               ToolTip="Where its flights come from and go to: the open sector they were in just before entering (or after leaving), or outside the ACCs. Entries made by a sector opening are not counted." />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Comes from" Style="{StaticResource Small}" Margin="0,0,0,2" />
+                            <StackPanel x:Name="FromList" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="Goes to" Style="{StaticResource Small}" Margin="0,0,0,2" />
+                            <StackPanel x:Name="ToList" />
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="Flight levels" Style="{StaticResource Heading}"
+                               ToolTip="Time spent inside by its traffic per band of 20 flight levels: climbing (green), level (blue), descending (orange)." />
+                    <Canvas x:Name="LevelChart" Height="10" SizeChanged="LevelChart_SizeChanged" AutomationProperties.Name="Flight level profile" />
+
+                    <TextBlock x:Name="InsideTitle" Text="Aircraft inside now" Style="{StaticResource Heading}"
+                               ToolTip="Flights inside the sector at the timeline time: call sign, flight level, when they entered" />
+                    <ItemsControl x:Name="InsideList" FontFamily="Consolas" FontSize="11" />
+                    <TextBlock x:Name="InsideEmpty" Text="None" Style="{StaticResource Small}" />
+
+                    <TextBlock Text="Next entries" Style="{StaticResource Heading}" ToolTip="The next flights to enter the sector after the timeline time" />
+                    <ItemsControl x:Name="NextList" FontFamily="Consolas" FontSize="11" />
+                    <TextBlock x:Name="NextEmpty" Text="None" Style="{StaticResource Small}" />
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
+    </Border>
+</UserControl>

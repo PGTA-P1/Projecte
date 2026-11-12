@@ -3,33 +3,33 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Projecte1_WPF_.ReadData
 {
     class Read_OpeningScheme
     {
+        private const string FORMAT = "'dd/MM/yyyy;ACC;hh:mm;hh:mm;CONFIG;E/T'";
+
         // accs: if not null, only the records of those ACCs are stored (null = all the ACCs).
         // With a filter, Header.RecordCount (from the file) is larger than Records.Count.
+        // Throws DataFileException (file, line, what is wrong) on the first line that does not follow the format
         public static OpeningScheme ReadFile(string filePath, HashSet<string> accs = null)
         {
             if (!File.Exists(filePath))
-            {
-                throw new FileNotFoundException($"El archivo no existe en la ruta especificada: {filePath}");
-            }
+                throw new DataFileException(filePath, "the file does not exist");
 
             var openingScheme = new OpeningScheme();
-            string[] lines = File.ReadAllLines(filePath);
+            int lineNumber = 0, found = 0;
 
-            foreach (var rawLine in lines)
+            foreach (string rawLine in File.ReadLines(filePath))
             {
+                lineNumber++;
                 string line = rawLine.Trim();
                 if (string.IsNullOrWhiteSpace(line))
                     continue;
+                var p = new LineParser(filePath, lineNumber, rawLine);
 
-                // Lectura de la cabecera (Primera línea iniciada con #)
+                // Header (first line, starting with #): optional, read when it has the expected fields
                 if (line.StartsWith("#"))
                 {
                     string[] headerParts = line.Split(';');
@@ -40,8 +40,8 @@ namespace Projecte1_WPF_.ReadData
                             FileType = headerParts[0].TrimStart('#').Trim(),
                             Version = int.TryParse(headerParts[1].Trim(), out int ver) ? ver : 0,
                             AiracCycle = int.TryParse(headerParts[2].Trim(), out int cycle) ? cycle : 0,
-                            AiracStartDate = DateTime.ParseExact(headerParts[3].Trim(), "yyyyMMdd", CultureInfo.InvariantCulture),
-                            AiracEndDate = DateTime.ParseExact(headerParts[4].Trim(), "yyyyMMdd", CultureInfo.InvariantCulture),
+                            AiracStartDate = p.Date(headerParts[3].Trim(), "yyyyMMdd", "the AIRAC start (header, field 4)"),
+                            AiracEndDate = p.Date(headerParts[4].Trim(), "yyyyMMdd", "the AIRAC end (header, field 5)"),
                             RecordCount = int.TryParse(headerParts[5].Trim(), out int count) ? count : 0,
                             DataSource = headerParts.Length > 6 ? headerParts[6].Trim() : string.Empty
                         };
@@ -49,27 +49,30 @@ namespace Projecte1_WPF_.ReadData
                     continue;
                 }
 
-                // Lectura de los registros de datos
-                string[] recordParts = line.Split(';');
-                if (recordParts.Length >= 6)
+                string[] recordParts = p.Fields(';', 6, FORMAT);
+                found++;
+                if (accs != null && !accs.Contains(recordParts[1].Trim()))
+                    continue; // ACC not requested
+
+                var record = new OpeningSchemeRecord
                 {
-                    if (accs != null && !accs.Contains(recordParts[1].Trim()))
-                        continue; // ACC not requested
+                    Date = p.Date(recordParts[0].Trim(), "dd/MM/yyyy", "the date (1st field)"),
+                    AccName = recordParts[1].Trim(),
+                    StartTime = p.Time(recordParts[2].Trim(), @"hh\:mm", "the start (3rd field)"),
+                    EndTime = p.Time(recordParts[3].Trim(), @"hh\:mm", "the end (4th field)"),
+                    ConfigurationName = recordParts[4].Trim(),
+                    Origin = recordParts[5].Trim().Length > 0 ? recordParts[5].Trim()[0] : 'E'
+                };
+                if (record.AccName.Length == 0 || record.ConfigurationName.Length == 0)
+                    throw p.Error("the ACC (2nd field) and the configuration (5th field) cannot be empty");
+                if (record.EndTime < record.StartTime)
+                    throw p.Error($"the end {record.EndTime:hh\\:mm} is before the start {record.StartTime:hh\\:mm} (a period crossing midnight must be split into two lines)");
 
-                    var record = new OpeningSchemeRecord
-                    {
-                        Date = DateTime.ParseExact(recordParts[0].Trim(), "dd/MM/yyyy", CultureInfo.InvariantCulture),
-                        AccName = recordParts[1].Trim(),
-                        StartTime = TimeSpan.ParseExact(recordParts[2].Trim(), @"hh\:mm", CultureInfo.InvariantCulture),
-                        EndTime = TimeSpan.ParseExact(recordParts[3].Trim(), @"hh\:mm", CultureInfo.InvariantCulture),
-                        ConfigurationName = recordParts[4].Trim(),
-                        Origin = recordParts[5].Trim().Length > 0 ? recordParts[5].Trim()[0] : 'E'
-                    };
-
-                    openingScheme.Records.Add(record);
-                }
+                openingScheme.Records.Add(record);
             }
 
+            if (found == 0)
+                throw new DataFileException(filePath, $"no opening record found: expected lines {FORMAT}");
             openingScheme.BuildIndex();
             return openingScheme;
         }

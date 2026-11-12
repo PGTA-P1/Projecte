@@ -1,30 +1,29 @@
 ﻿using Projecte1_WPF_.Classes;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Projecte1_WPF_.ReadData
 {
     /// Clase encargada de procesar archivos CSV delimitados por punto y coma (;) para capacidades.
     public class CapacityReader
     {
-        // keep: if not null, only the sectors whose name is in the set are stored (null = load everything)
+        private const string FORMAT = "'Sector;Capacity'";
+
+        // keep: if not null, only the sectors whose name is in the set are stored (null = load everything).
+        // Throws DataFileException (file, line, what is wrong) on the first line that does not follow the format
         public CapacityFile Read(string filePath, HashSet<string> keep = null)
         {
             if (!File.Exists(filePath))
-            {
-                throw new FileNotFoundException($"No se encontró el archivo: {filePath}");
-            }
+                throw new DataFileException(filePath, "the file does not exist");
 
             var result = new CapacityFile();
             bool isFirstLine = true;
+            int lineNumber = 0, found = 0;
 
             foreach (var rawLine in File.ReadLines(filePath))
             {
+                lineNumber++;
                 var line = rawLine.Trim();
 
                 if (string.IsNullOrWhiteSpace(line))
@@ -38,24 +37,24 @@ namespace Projecte1_WPF_.ReadData
                         continue;
                 }
 
-                // Separar por punto y coma
-                var parts = line.Split(';');
-                if (parts.Length >= 2)
-                {
-                    if (keep != null && !keep.Contains(parts[0].Trim()))
-                        continue; // sector not needed
+                var p = new LineParser(filePath, lineNumber, rawLine);
+                var parts = p.Fields(';', 2, FORMAT);
+                string sector = parts[0].Trim();
+                if (sector.Length == 0)
+                    throw p.Error("the sector name (1st field) is empty");
+                double capacity = p.Double(parts[1].Trim(), "the hourly capacity (2nd field)");
+                if (capacity < 0)
+                    throw p.Error($"the hourly capacity cannot be negative, found {parts[1].Trim()}");
+                found++;
 
-                    var record = new CapacityRecord
-                    {
-                        SectorName = parts[0].Trim(),
-                        // Intentar parsear el número; si falla (por ej. formato incorrecto), asigna 0
-                        HourlyCapacity = double.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double cap) ? cap : 0
-                    };
+                if (keep != null && !keep.Contains(sector))
+                    continue; // sector not needed
 
-                    result.Capacities.Add(record);
-                }
+                result.Capacities.Add(new CapacityRecord { SectorName = sector, HourlyCapacity = capacity });
             }
 
+            if (found == 0)
+                throw new DataFileException(filePath, $"no capacity line found: expected lines {FORMAT}");
             return result;
         }
     }

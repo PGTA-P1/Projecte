@@ -15,8 +15,8 @@ namespace Projecte1_WPF_.ArcGisMethods
     // elementary sectors of a collapsed sector as white dashes, the height steps as black dots. Each line style is its own
     // overlay so it can be shown or hidden.
     //   2D map:   with a flat fill per sector coloured by demand vs capacity (SetStatus), and the height steps
-    //   3D scene: without fill (the prisms are the fill) and without height steps (the volumes show the heights), each
-    //             line on the top of the prism (band) it belongs to
+    //   3D scene: without fill (the prisms are the fill) and without height steps (the volumes show the heights); the
+    //             outline on the top of each prism (band), the member borders at the level where the members meet
     public class PlotSectorPlan
     {
         // 3D lines this far above the top face of the prism, so the face does not hide them
@@ -89,79 +89,25 @@ namespace Projecte1_WPF_.ArcGisMethods
             }
 
             // 3D: each line on the prism it belongs to. The outline is the top ring of every band (the footprint drawn at
-            // one height floated above the lower bands and did not match the prisms in a tilted view). Each piece of an
-            // inner border goes on the top of the highest band under it
+            // one height floated above the lower bands and did not match the prisms in a tilted view). Each border between
+            // elementary sectors goes at the level where they meet (SectorPlan.MemberBorderLevels): the top of the wall
+            // between side-by-side members, or the face between a lower and a higher one
             if (bands == null || bands.Count == 0)
                 return;
             foreach (IMergedSector band in bands)
                 foreach (var ring in band.OuterRings)
                     _outlines.Graphics.Add(Named(new Graphic(Line3D(ring, TopMetres(band))), plan.Name, null));
-            foreach (var line in plan.MemberBorders)
-                foreach (var (piece, top) in OnBandTops(line, bands))
-                    _memberBorders.Graphics.Add(Named(new Graphic(Line3D(piece, top)), plan.Name, null));
+            for (int i = 0; i < plan.MemberBorders.Count; i++)
+                _memberBorders.Graphics.Add(Named(new Graphic(Line3D(plan.MemberBorders[i], Math.Min(plan.MemberBorderLevels[i], MAX_VISIBLE_FL) * FL_TO_M)),
+                                                  plan.Name, null));
         }
 
         private const double FL_TO_M = 100 * 0.3048;
         private const int MAX_VISIBLE_FL = 600; // same cap as PlotAirspaces3D
 
-        // Border pieces longer than this (degrees, ~3 km) are split to find the band under each part
-        private const double PIECE_DEG = 0.03;
-
         private static double TopMetres(IMergedSector band)
         {
             return Math.Min(band.TopLevel, MAX_VISIBLE_FL) * FL_TO_M;
-        }
-
-        // The line cut into pieces, each with the top (metres) of the highest band that contains its middle; consecutive
-        // pieces at the same height are joined. A piece over no band (on an edge) keeps the height of the previous one
-        private static List<(List<(double Latitude, double Longitude)> Line, double Top)> OnBandTops(
-            List<(double Latitude, double Longitude)> line, IList<IMergedSector> bands)
-        {
-            var result = new List<(List<(double Latitude, double Longitude)>, double)>();
-            List<(double Latitude, double Longitude)> current = null;
-            double currentTop = double.NaN;
-            for (int i = 0; i + 1 < line.Count; i++)
-            {
-                var a = line[i];
-                var b = line[i + 1];
-                int n = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(Math.Pow(b.Latitude - a.Latitude, 2) + Math.Pow(b.Longitude - a.Longitude, 2)) / PIECE_DEG));
-                for (int k = 0; k < n; k++)
-                {
-                    var p0 = (a.Latitude + (b.Latitude - a.Latitude) * k / n, a.Longitude + (b.Longitude - a.Longitude) * k / n);
-                    var p1 = (a.Latitude + (b.Latitude - a.Latitude) * (k + 1) / n, a.Longitude + (b.Longitude - a.Longitude) * (k + 1) / n);
-                    double midLat = (p0.Item1 + p1.Item1) / 2, midLon = (p0.Item2 + p1.Item2) / 2;
-                    double top = bands.Where(bd => bd.OuterRings.Any(r => Contains(r, midLat, midLon)))
-                                      .Select(TopMetres).DefaultIfEmpty(double.NaN).Max();
-                    if (double.IsNaN(top))
-                        top = double.IsNaN(currentTop) ? bands.Max(TopMetres) : currentTop;
-                    if (current == null || top != currentTop)
-                    {
-                        if (current != null)
-                            result.Add((current, currentTop));
-                        current = new List<(double Latitude, double Longitude)> { p0 };
-                        currentTop = top;
-                    }
-                    current.Add(p1);
-                }
-            }
-            if (current != null)
-                result.Add((current, currentTop));
-            return result;
-        }
-
-        // Point in ring (ray casting on latitude/longitude)
-        private static bool Contains(List<(double Latitude, double Longitude)> ring, double lat, double lon)
-        {
-            bool inside = false;
-            for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
-            {
-                var pi = ring[i];
-                var pj = ring[j];
-                if ((pi.Latitude > lat) != (pj.Latitude > lat) &&
-                    lon < (pj.Longitude - pi.Longitude) * (lat - pi.Latitude) / (pj.Latitude - pi.Latitude) + pi.Longitude)
-                    inside = !inside;
-            }
-            return inside;
         }
 
         // Shows or hides every line (and the 2D fill) of the sector
@@ -190,8 +136,20 @@ namespace Projecte1_WPF_.ArcGisMethods
                     g.Attributes["status"] = status;
         }
 
-        public bool ShowMemberBorders { get => _memberBorders.IsVisible; set => _memberBorders.IsVisible = value; }
-        public bool ShowLevelSteps { get => _levelSteps.IsVisible; set => _levelSteps.IsVisible = value; }
+        // Line options, and the whole plan hidden (density map); the overlays show what all three allow
+        private bool _showMembers = true, _showSteps = true, _hidden;
+        public bool ShowMemberBorders { get => _showMembers; set { _showMembers = value; ApplyVisibility(); } }
+        public bool ShowLevelSteps { get => _showSteps; set { _showSteps = value; ApplyVisibility(); } }
+        public bool IsVisible { get => !_hidden; set { _hidden = !value; ApplyVisibility(); } }
+
+        private void ApplyVisibility()
+        {
+            if (_fills != null)
+                _fills.IsVisible = !_hidden;
+            _outlines.IsVisible = !_hidden;
+            _memberBorders.IsVisible = !_hidden && _showMembers;
+            _levelSteps.IsVisible = !_hidden && _showSteps;
+        }
 
         public void Clear()
         {

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -124,24 +125,37 @@ namespace Projecte1_WPF_
         // Order: ACCs -> sector names in the .cfg -> collapsed (.spc, nested too) -> elementary (.sls) -> airblocks (.are) -> configurations
         //        -> opening scheme (.cos) -> capacities (.csv) -> trajectories crossing the airblocks' box (.so6)
         // ------------------------------------------------------------------------------------------------
-        public void LoadFiltered()
+        // Problems of the last load that do not stop it (e.g. an ACC without configurations), for the status line
+        public List<string> LoadWarnings { get; } = new List<string>();
+
+        // The files of the last load (null before loading)
+        public DataFiles Files { get; private set; }
+
+        // files = null: the default files of the Archives folder. Throws DataFileException (file, line, what is wrong) when a
+        // file cannot be read, or when the files do not fit together (e.g. no ACC of accs.txt has a configuration)
+        public void LoadFiltered(DataFiles files = null)
         {
-            Accs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string l in File.ReadLines(Archive("accs.txt")))
-                if (l.Trim().Length > 0) Accs.Add(l.Trim());
+            files = files ?? DataFiles.Default();
+            Files = files;
+            LoadWarnings.Clear();
+            Accs = DataFiles.ReadAccs(files[DataRole.Accs]);
+            string cfgPath = files[DataRole.Configurations];
 
             // 1. Sector names used by those ACCs in the .cfg (names only, nothing else stored)
             var needed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string raw in File.ReadLines(Archive("Configuration_1608.cfg")))
+            foreach (string raw in File.ReadLines(cfgPath))
             {
                 string line = raw.Trim();
                 if (line.Length == 0 || line.StartsWith("#")) continue;
                 string[] p = line.Split(';');
                 if (p.Length >= 3 && Accs.Contains(p[0].Trim())) needed.Add(p[2].Trim());
             }
+            if (needed.Count == 0)
+                throw new DataFileException(cfgPath, $"no configuration of the ACCs of {Path.GetFileName(files[DataRole.Accs])} " +
+                                                     $"({string.Join(", ", Accs.Take(5))}{(Accs.Count > 5 ? ", …" : "")}) in this file");
 
             // 2. Collapsed sectors, following nested ones (a CS can contain other CS)
-            SpcFile spc = new SpcReader().Read(Archive("Airspace_1608.spc"));
+            SpcFile spc = new SpcReader().Read(files[DataRole.Airspaces]);
             var csById = new Dictionary<string, Airspace>(StringComparer.OrdinalIgnoreCase);
             foreach (Airspace a in spc.Airspaces)
                 if (a.Type == "CS") csById[a.Id] = a;
@@ -159,34 +173,53 @@ namespace Projecte1_WPF_
 
             // 3. Elementary sectors
             Elementary.Clear();
-            Elementary.AddRange(Read_ElementarySectors.LoadFromFile(Archive("sectors_1608.sls"), needed));
+            Elementary.AddRange(Read_ElementarySectors.LoadFromFile(files[DataRole.ElementarySectors], needed));
+            if (Elementary.Count == 0)
+                throw new DataFileException(files[DataRole.ElementarySectors], "none of the sectors used by the configurations of the ACCs is in this file");
 
             // 4. Airblocks used by those elementary sectors
             var blocks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (ElementarySector es in Elementary)
                 foreach (SectorVolume v in es.Volumes) blocks.Add(v.VolumeName);
             Airblocks.Clear();
-            Airblocks.AddRange(new Reader_Airblock().ReadFromFile(Archive("sectors_1608.are"), blocks));
+            Airblocks.AddRange(new Reader_Airblock().ReadFromFile(files[DataRole.Airblocks], blocks));
+            if (Airblocks.Count == 0)
+                throw new DataFileException(files[DataRole.Airblocks], "none of the airblocks used by the elementary sectors is in this file");
+            int missingBlocks = blocks.Count - Airblocks.Select(a => a.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            if (missingBlocks > 0)
+                LoadWarnings.Add($"{missingBlocks} airblocks used by the sectors are not in {Path.GetFileName(files[DataRole.Airblocks])}");
 
             // 5. Configurations of those ACCs
             Configurations.Clear();
             Configurations.AddRange(new ConfigurationReader()
-                .Read(Archive("Configuration_1608.cfg"), Elementary, Collapsed, Accs).Configurations);
+                .Read(cfgPath, Elementary, Collapsed, Accs).Configurations);
+            var withoutConfig = Accs.Where(a => !Configurations.Any(c => string.Equals(c.AccName, a, StringComparison.OrdinalIgnoreCase))).ToList();
+            if (withoutConfig.Count > 0)
+                LoadWarnings.Add($"no configuration for {string.Join(", ", withoutConfig)}");
+            int notFound = Configurations.Sum(c => c.NotFound.Count);
+            if (notFound > 0)
+                LoadWarnings.Add($"{notFound} sector names of the configurations are in neither the .sls nor the .spc");
 
             // 6. Opening scheme of those ACCs
-            OpeningScheme = Read_OpeningScheme.ReadFile(Archive("OpeningScheme_1608.cos"), Accs);
+            OpeningScheme = Read_OpeningScheme.ReadFile(files[DataRole.OpeningScheme], Accs);
+            if (OpeningScheme.Records.Count == 0)
+                throw new DataFileException(files[DataRole.OpeningScheme], $"no opening record for the ACCs ({string.Join(", ", Accs.Take(5))}{(Accs.Count > 5 ? ", …" : "")})");
 
             // 7. Capacities of the kept sectors (elementary and collapsed) and of the ACCs themselves
             var capacityNames = new HashSet<string>(needed, StringComparer.OrdinalIgnoreCase);
             capacityNames.UnionWith(Accs);
             Capacities.Clear();
-            Capacities.AddRange(new CapacityReader().Read(Archive("capacity_sector_level.csv"), capacityNames).Capacities);
+            Capacities.AddRange(new CapacityReader().Read(files[DataRole.Capacities], capacityNames).Capacities);
+            if (Capacities.Count == 0)
+                LoadWarnings.Add("no capacity for these sectors: every sector counts as without limit (always green)");
 
             // 8. Trajectories with some segment inside the box of the kept airblocks
             Area = LatLonBox.FromAirblocks(Airblocks, AREA_MARGIN_DEG);
             Trajectories.Clear();
             if (Area != null)
-                Trajectories.AddRange(new Reader_So6().ReadFromFile(Archive("20160728Initial_initial.so6"), Area));
+                Trajectories.AddRange(new Reader_So6().ReadFromFile(files[DataRole.Trajectories], Area));
+            if (Trajectories.Count == 0)
+                throw new DataFileException(files[DataRole.Trajectories], "no flight crosses the area of the ACCs");
         }
 
         // ------------------------------------------------------------------------------------------------

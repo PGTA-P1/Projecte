@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Windows;
+using System.Linq;
 using Projecte1_WPF_.Classes;
 
 namespace Projecte1_WPF_.ReadData
@@ -11,6 +11,8 @@ namespace Projecte1_WPF_.ReadData
     {
         // area: if not null, only trajectories with at least one segment inside that box are stored (null = load everything).
         // The file is read line by line, and a trajectory outside the area is dropped as soon as it is complete.
+        // Throws DataFileException (file, line, what is wrong) on the first line that does not follow the format, and for a
+        // flight that never reaches its destination (it used to show a message box and stop reading)
         public Trajectory[] ReadFromFile(string fileName, LatLonBox area = null)
         {
             List<Trajectory> trajectoryList = new List<Trajectory>();
@@ -43,10 +45,8 @@ namespace Projecte1_WPF_.ReadData
                     continue;
                 }
 
-                string[] field = line.Split(
-                    new[] { ' ' },
-                    StringSplitOptions.RemoveEmptyEntries
-                );
+                var p = new LineParser(fileName, lineNumber, line);
+                string[] field = p.Fields(null, 20, "an so6 segment 'FROM_TO ORIGIN DEST TYPE hhmmss hhmmss FL FL status CALLSIGN yymmdd yymmdd lat lon lat lon id seq length parity'");
 
                 string callSign = field[9];
 
@@ -57,18 +57,14 @@ namespace Projecte1_WPF_.ReadData
                     // The callsign changed but the flight we were building never
                     // reached its destination: report it and stop reading.
                     if (currentTrajectory != null && !reachedDestination)
-                    {
-                        ReportIncidence(currentTrajectory, lastLineNumber);
-                        DropIfOutside();
-                        return trajectoryList.ToArray();
-                    }
+                        throw Incidence(fileName, currentTrajectory, lastLineNumber);
 
                     DropIfOutside();
                     insideArea = false;
 
                     currentTrajectory = new Trajectory
                     {
-                        FlightIdentifier = long.Parse(field[16], CultureInfo.InvariantCulture),
+                        FlightIdentifier = p.Long(field[16], "the flight id (17th field)"),
                         Origin = field[1],
                         Destination = field[2],
                         AircraftType = field[3],
@@ -81,6 +77,8 @@ namespace Projecte1_WPF_.ReadData
 
                 // Field 1 is "PointFrom_PointTo".
                 int splitIndex = field[0].IndexOf('_');
+                if (splitIndex <= 0 || splitIndex == field[0].Length - 1)
+                    throw p.Error($"the 1st field must be 'FROM_TO' (two point names joined by '_'), found \"{field[0]}\"");
                 string pointFrom = field[0].Substring(0, splitIndex);
                 string pointTo = field[0].Substring(splitIndex + 1);
 
@@ -89,25 +87,29 @@ namespace Projecte1_WPF_.ReadData
                     PointFrom = pointFrom,
                     PointTo = pointTo,
 
-                    BeginDateTime = ParseDate(field[10]) + ParseTime(field[4]),
-                    EndDateTime = ParseDate(field[11]) + ParseTime(field[5]),
+                    BeginDateTime = ParseDate(p, field[10], "the begin date (11th field)") + ParseTime(p, field[4], "the begin time (5th field)"),
+                    EndDateTime = ParseDate(p, field[11], "the end date (12th field)") + ParseTime(p, field[5], "the end time (6th field)"),
 
-                    FLBegin = int.Parse(field[6], CultureInfo.InvariantCulture),
-                    FLEnd = int.Parse(field[7], CultureInfo.InvariantCulture),
+                    FLBegin = p.Int(field[6], "the begin flight level (7th field)"),
+                    FLEnd = p.Int(field[7], "the end flight level (8th field)"),
 
-                    Status = int.Parse(field[8], CultureInfo.InvariantCulture),
+                    Status = p.Int(field[8], "the status (9th field)"),
 
                     // so6 stores lat/lon as decimal arc-minutes (degrees*60 + fractional
                     // minutes); divide by 60 to get the decimal degrees we work with.
-                    LatBegin = double.Parse(field[12], CultureInfo.InvariantCulture) / 60.0,
-                    LonBegin = double.Parse(field[13], CultureInfo.InvariantCulture) / 60.0,
-                    LatEnd = double.Parse(field[14], CultureInfo.InvariantCulture) / 60.0,
-                    LonEnd = double.Parse(field[15], CultureInfo.InvariantCulture) / 60.0,
+                    LatBegin = p.Double(field[12], "the begin latitude (13th field, arc-minutes)") / 60.0,
+                    LonBegin = p.Double(field[13], "the begin longitude (14th field, arc-minutes)") / 60.0,
+                    LatEnd = p.Double(field[14], "the end latitude (15th field, arc-minutes)") / 60.0,
+                    LonEnd = p.Double(field[15], "the end longitude (16th field, arc-minutes)") / 60.0,
 
-                    Sequence = int.Parse(field[17], CultureInfo.InvariantCulture),
-                    LengthNm = double.Parse(field[18], CultureInfo.InvariantCulture),
-                    ParityColour = int.Parse(field[19], CultureInfo.InvariantCulture)
+                    Sequence = p.Int(field[17], "the sequence (18th field)"),
+                    LengthNm = p.Double(field[18], "the length (19th field)"),
+                    ParityColour = p.Int(field[19], "the parity (20th field)")
                 };
+                if (segment.EndDateTime < segment.BeginDateTime)
+                    throw p.Error($"the segment ends ({segment.EndDateTime:dd/MM HH:mm:ss}) before it begins ({segment.BeginDateTime:dd/MM HH:mm:ss})");
+                if (Math.Abs(segment.LatBegin) > 90 || Math.Abs(segment.LatEnd) > 90 || Math.Abs(segment.LonBegin) > 180 || Math.Abs(segment.LonEnd) > 180)
+                    throw p.Error("a point is outside the Earth: coordinates must be arc-minutes, latitude first");
 
                 currentTrajectory.Segments.Add(segment);
                 lastLineNumber = lineNumber;
@@ -124,46 +126,46 @@ namespace Projecte1_WPF_.ReadData
 
             // The file ended mid-flight.
             if (currentTrajectory != null && !reachedDestination)
-            {
-                ReportIncidence(currentTrajectory, lastLineNumber);
-            }
+                throw Incidence(fileName, currentTrajectory, lastLineNumber);
 
+            if (lineNumber == 0 || trajectoryList.Count == 0 && area == null)
+                throw new DataFileException(fileName, "no segment found: is this an .so6 file?");
             DropIfOutside();
             return trajectoryList.ToArray();
         }
 
-        private static void ReportIncidence(Trajectory trajectory, int lastLineNumber)
+        // A flight whose segments stop before its destination airport (the next line is another flight, or the file ends)
+        private static DataFileException Incidence(string fileName, Trajectory trajectory, int lastLineNumber)
         {
             string lastPoint = trajectory.Segments[trajectory.Segments.Count - 1].PointTo;
-
-            MessageBox.Show(
-                $"Flight {trajectory.CallSign} (id {trajectory.FlightIdentifier}, " +
-                $"{trajectory.Origin} -> {trajectory.Destination}) never reached its destination.\n\n" +
-                $"Last segment read at line {lastLineNumber}, ending at point \"{lastPoint}\".",
-                "so6 read error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error
-            );
+            return new DataFileException(fileName, lastLineNumber, null,
+                $"flight {trajectory.CallSign} (id {trajectory.FlightIdentifier}, {trajectory.Origin} -> {trajectory.Destination}) " +
+                $"never reaches its destination: its last segment, on this line, ends at point \"{lastPoint}\"");
         }
 
         // HHMMSS, zero-padded to 6 digits (fields 5/6).
-        private static TimeSpan ParseTime(string hhmmss)
+        private static TimeSpan ParseTime(LineParser p, string hhmmss, string field)
         {
-            return new TimeSpan(
-                int.Parse(hhmmss.Substring(0, 2), CultureInfo.InvariantCulture),
-                int.Parse(hhmmss.Substring(2, 2), CultureInfo.InvariantCulture),
-                int.Parse(hhmmss.Substring(4, 2), CultureInfo.InvariantCulture)
-            );
+            if (hhmmss.Length != 6 || !hhmmss.All(char.IsDigit))
+                throw p.Error($"{field} must be hhmmss (6 digits), found \"{hhmmss}\"");
+            int h = p.Int(hhmmss.Substring(0, 2), field), m = p.Int(hhmmss.Substring(2, 2), field), s = p.Int(hhmmss.Substring(4, 2), field);
+            if (h > 23 || m > 59 || s > 59)
+                throw p.Error($"{field} is not a valid time, found \"{hhmmss}\"");
+            return new TimeSpan(h, m, s);
         }
 
         // YYMMDD, zero-padded to 6 digits (fields 11/12). YY <= 68 -> 20YY, else 19YY.
-        private static DateTime ParseDate(string yymmdd)
+        private static DateTime ParseDate(LineParser p, string yymmdd, string field)
         {
-            int year = int.Parse(yymmdd.Substring(0, 2), CultureInfo.InvariantCulture);
-            int month = int.Parse(yymmdd.Substring(2, 2), CultureInfo.InvariantCulture);
-            int day = int.Parse(yymmdd.Substring(4, 2), CultureInfo.InvariantCulture);
+            if (yymmdd.Length != 6 || !yymmdd.All(char.IsDigit))
+                throw p.Error($"{field} must be yymmdd (6 digits), found \"{yymmdd}\"");
+            int year = p.Int(yymmdd.Substring(0, 2), field);
+            int month = p.Int(yymmdd.Substring(2, 2), field);
+            int day = p.Int(yymmdd.Substring(4, 2), field);
 
             year = year <= 68 ? 2000 + year : 1900 + year;
+            if (month < 1 || month > 12 || day < 1 || day > DateTime.DaysInMonth(year, month))
+                throw p.Error($"{field} is not a valid date, found \"{yymmdd}\"");
 
             return new DateTime(year, month, day);
         }
