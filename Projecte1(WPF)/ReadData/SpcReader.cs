@@ -10,7 +10,8 @@ namespace Projecte1_WPF_.ReadData
     public class SpcReader
     {
         /// Lee un archivo .spc y genera una estructura con sus metadatos y espacios aéreos.
-        public SpcFile Read(string filePath)
+        /// skipped: if not null (skip mode), an airspace with a bad line is left out whole and noted there
+        public SpcFile Read(string filePath, System.Collections.Generic.List<string> skipped = null)
         {
             // Validación de existencia del archivo en la ruta indicada
             if (!File.Exists(filePath))
@@ -18,6 +19,7 @@ namespace Projecte1_WPF_.ReadData
 
             var result = new SpcFile();
             Airspace currentAirspace = null;
+            bool skippingAirspace = false;
             int lineNumber = 0;
 
             // Lectura por flujo de líneas (Streaming) para asegurar bajo consumo de memoria RAM
@@ -60,42 +62,65 @@ namespace Projecte1_WPF_.ReadData
 
                 // Extraer el identificador de registro (A = Airspace, S = Sector/Sub-airspace)
                 string recordType = GetPart(parts, 0);
+                bool isAirspace = recordType.Equals("A", StringComparison.OrdinalIgnoreCase);
 
-                // --- Procesar Registro 'A' (Espacio Aéreo Principal)[cite: 3] ---
-                if (recordType.Equals("A", StringComparison.OrdinalIgnoreCase))
+                // Skip mode: the lines of an airspace left out are ignored up to the next 'A;' line
+                if (skippingAirspace && !isAirspace)
+                    continue;
+
+                try
                 {
-                    p.Fields(';', 4, "an airspace 'A;ID;NAME;TYPE;…'");
-                    if (GetPart(parts, 1).Length == 0)
-                        throw p.Error("the airspace id (2nd field) is empty");
-                    currentAirspace = new Airspace
+                    // --- Procesar Registro 'A' (Espacio Aéreo Principal) ---
+                    if (isAirspace)
                     {
-                        Id = GetPart(parts, 1),                 // Campo 2: Airspace ID[
-                        Name = GetPart(parts, 2),               // Campo 3: Descripción/Nombre
-                        Type = GetPart(parts, 3),               // Campo 4: Tipo de espacio aéreo[
-                        SubAirspacesCount = ParseInt(GetPart(parts, 4)), // Campo 5: Número de sub-espacios
-                        Category = GetPart(parts, 5)            // Campo 6: Categoría (ej. 'T')
-                    };
+                        skippingAirspace = false;
+                        currentAirspace = null;
+                        p.Fields(';', 4, "an airspace 'A;ID;NAME;TYPE;…'");
+                        if (GetPart(parts, 1).Length == 0)
+                            throw p.Error("the airspace id (2nd field) is empty");
+                        currentAirspace = new Airspace
+                        {
+                            Id = GetPart(parts, 1),                 // Campo 2: Airspace ID
+                            Name = GetPart(parts, 2),               // Campo 3: Descripción/Nombre
+                            Type = GetPart(parts, 3),               // Campo 4: Tipo de espacio aéreo
+                            SubAirspacesCount = ParseInt(GetPart(parts, 4)), // Campo 5: Número de sub-espacios
+                            Category = GetPart(parts, 5)            // Campo 6: Categoría (ej. 'T')
+                        };
 
-                    result.Airspaces.Add(currentAirspace);
+                        result.Airspaces.Add(currentAirspace);
+                    }
+                    // --- Procesar Registro 'S' (Sub-espacio pertenenciente al último 'A') ---
+                    else if (recordType.Equals("S", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (currentAirspace == null)
+                            throw p.Error("a member line 'S;…' comes before any airspace line 'A;…'");
+                        p.Fields(';', 2, "a member 'S;NAME;TYPE'");
+                        if (GetPart(parts, 1).Length == 0)
+                            throw p.Error("the member name (2nd field) is empty");
+                        var sector = new Sector
+                        {
+                            Name = GetPart(parts, 1), // Campo 2: Nombre del sub-espacio
+                            Type = GetPart(parts, 2)  // Campo 3: Tipo del sub-espacio
+                        };
+
+                        currentAirspace.Sectors.Add(sector);
+                    }
+                    else
+                        throw p.Error($"unknown record '{recordType}': lines must start with 'A;' (airspace) or 'S;' (its members)");
                 }
-                // --- Procesar Registro 'S' (Sub-espacio pertenenciente al último 'A') ---
-                else if (recordType.Equals("S", StringComparison.OrdinalIgnoreCase))
+                catch (DataFileException ex) when (skipped != null)
                 {
-                    if (currentAirspace == null)
-                        throw p.Error("a member line 'S;…' comes before any airspace line 'A;…'");
-                    p.Fields(';', 2, "a member 'S;NAME;TYPE'");
-                    if (GetPart(parts, 1).Length == 0)
-                        throw p.Error("the member name (2nd field) is empty");
-                    var sector = new Sector
+                    // The airspace the line belongs to goes whole (without one member it would be another sector)
+                    if (currentAirspace != null)
                     {
-                        Name = GetPart(parts, 1), // Campo 2: Nombre del sub-espacio
-                        Type = GetPart(parts, 2)  // Campo 3: Tipo del sub-espacio
-                    };
-
-                    currentAirspace.Sectors.Add(sector);
+                        result.Airspaces.Remove(currentAirspace);
+                        Skips.Add(skipped, ex, $"airspace {currentAirspace.Id} skipped");
+                    }
+                    else
+                        Skips.Add(skipped, ex, isAirspace ? "airspace skipped" : "line skipped");
+                    currentAirspace = null;
+                    skippingAirspace = true;
                 }
-                else
-                    throw p.Error($"unknown record '{recordType}': lines must start with 'A;' (airspace) or 'S;' (its members)");
             }
 
             if (result.Airspaces.Count == 0)

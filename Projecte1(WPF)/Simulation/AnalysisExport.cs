@@ -7,20 +7,42 @@ using System.Text;
 
 namespace Projecte1_WPF_.Simulation
 {
-    // CSV EXPORTS of the analysed data (Results menu and the overload report), from the AirspaceTimeline: same format as
+    // CSV EXPORTS of the analysed data (Results menu and the comparison), from the AirspaceTimeline: same format as
     // entries.csv, ';'-separated, the parameter lines "# name;value" first, then a blank line, the header and the rows.
-    // Times "yyyy-MM-dd HH:mm" UTC (the simulation spans several days). Each returns the number of rows written
+    // A date and a time never share a cell (the user's rule: Excel shows a combined one as #####): every moment is two
+    // columns, the day ("28" = day of the month when the whole simulation is in one month, else yyyy-MM-dd, as entries.csv;
+    // the "# Dates" line says which) and the time "HH:mm" UTC. Each returns the number of rows written
     public static class AnalysisExport
     {
         public const string DEMAND_CSV = "demand.csv", TRAFFIC_CSV = "traffic.csv", SECTORS_CSV = "sectors.csv", OVERLOADS_CSV = "overloads.csv";
 
+
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-        private static string T(DateTime t) => t.ToString("yyyy-MM-dd HH:mm", Inv);
+        // Day format of the current export (set by Write's callers through Days)
+        [ThreadStatic] private static bool _oneMonth;
+
+        private static void Days(AirspaceTimeline tl)
+        {
+            DateTime first = tl.Starts[0], last = tl.Starts[tl.Starts.Count - 1];
+            _oneMonth = first.Year == last.Year && first.Month == last.Month;
+        }
+
+        // A moment as two cells: day;time
+        private static string T(DateTime t) =>
+            (_oneMonth ? t.Day.ToString(Inv) : t.ToString("yyyy-MM-dd", Inv)) + ";" + t.ToString("HH:mm", Inv);
+
+        // Header captions for a moment: "<name> day;<name> time"
+        private static string H(string name) => name + " day;" + name + " time";
+
+        private static string DatesLine(AirspaceTimeline tl) => _oneMonth
+            ? tl.Starts[0].ToString("MMMM yyyy", Inv) + " UTC, the day columns = day of the month"
+            : "UTC, the day columns = yyyy-MM-dd";
+
         private static string N(double v, string format = "0.#") => v.ToString(format, Inv);
         private static string Status(sbyte s) => s == (sbyte)CapacityStatus.Red ? "overloaded" : s == (sbyte)CapacityStatus.Yellow ? "near limit" : "under 80 %";
 
-        private static int Write(string path, IEnumerable<(string Name, string Value)> parameters, string header, IEnumerable<string> rows)
+        private static int Write(string path, IEnumerable<(string Name, string Value)> parameters, string header, IEnumerable<string> rows, AirspaceTimeline tl)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             int count = 0;
@@ -28,6 +50,7 @@ namespace Projecte1_WPF_.Simulation
             {
                 foreach (var (name, value) in parameters)
                     writer.WriteLine("# " + name + ";" + value);
+                writer.WriteLine("# Dates;" + DatesLine(tl));
                 writer.WriteLine();
                 writer.WriteLine(header);
                 foreach (string row in rows)
@@ -56,7 +79,8 @@ namespace Projecte1_WPF_.Simulation
                                                  cap == null ? "" : N(tl.Load(i, k) * 100, "0"), Status(s));
                     }
             }
-            return Write(path, parameters, "Time;Window start;Window end;Sector;ACC;Demand (entries);Capacity per window;Load (%);Status", Rows());
+            Days(tl);
+            return Write(path, parameters, "Day;Time;" + H("Window start") + ";" + H("Window end") + ";Sector;ACC;Demand (entries);Capacity per window;Load (%);Status", Rows(), tl);
         }
 
         // Whole airspace at every sliding step
@@ -72,16 +96,41 @@ namespace Projecte1_WPF_.Simulation
                                              top < 0 ? "" : tl.Sectors[top], top < 0 ? "" : N(tl.Load(top, k) * 100, "0"));
                 }
             }
-            return Write(path, parameters, "Time;Window start;Window end;Aircraft;Open sectors;Under 80 %;Near limit;Overloaded;Most loaded sector;Its load (%)", Rows());
+            Days(tl);
+            return Write(path, parameters, "Day;Time;" + H("Window start") + ";" + H("Window end") + ";Aircraft;Open sectors;Under 80 %;Near limit;Overloaded;Most loaded sector;Its load (%)", Rows(), tl);
         }
 
-        // One row per sector over the whole simulation (the Busiest sectors tab)
-        public static int Sectors(AirspaceTimeline tl, string path, IEnumerable<(string, string)> parameters)
+        // COMPARISON (the comparison panel's export, two files): the load of the compared sectors side by side at every
+        // sliding step (blank = closed, "no limit" = no capacity), in the order they were ticked
+        public static int ComparisonLoad(AirspaceTimeline tl, IList<string> names, string path, IEnumerable<(string, string)> parameters)
         {
-            double step = tl.Step.TotalMinutes;
+            int[] rows = names.Select(tl.RowOf).ToArray();
             IEnumerable<string> Rows()
             {
-                for (int i = 0; i < tl.Sectors.Count; i++)
+                for (int k = 0; k < tl.Starts.Count; k++)
+                {
+                    var cells = new List<string> { T(tl.Starts[k]), T(tl.Windows[k].Start), T(tl.Windows[k].End) };
+                    foreach (int r in rows)
+                        cells.Add(r < 0 || tl.Status[r, k] == AirspaceTimeline.CLOSED ? "" : tl.Capacity[r] == null ? "no limit" : N(tl.Load(r, k) * 100, "0"));
+                    yield return string.Join(";", cells);
+                }
+            }
+            Days(tl);
+            return Write(path, parameters, "Day;Time;" + H("Window start") + ";" + H("Window end") + ";" + string.Join(";", names.Select(n => n + " load (%)")), Rows(), tl);
+        }
+
+        // ... and their summary: the columns of sectors.csv, for the compared sectors only, in the order they were ticked
+        public static int ComparisonSummary(AirspaceTimeline tl, IList<string> names, string path, IEnumerable<(string, string)> parameters) =>
+            Sectors(tl, path, parameters, names);
+
+        // One row per sector over the whole simulation (the Busiest sectors tab); only: these sectors, in this order
+        public static int Sectors(AirspaceTimeline tl, string path, IEnumerable<(string, string)> parameters, IList<string> only = null)
+        {
+            double step = tl.Step.TotalMinutes;
+            IEnumerable<int> Indexes() => only == null ? Enumerable.Range(0, tl.Sectors.Count) : only.Select(tl.RowOf).Where(i => i >= 0);
+            IEnumerable<string> Rows()
+            {
+                foreach (int i in Indexes())
                 {
                     int peak = -1;
                     for (int k = 0; k < tl.Starts.Count; k++)
@@ -92,10 +141,11 @@ namespace Projecte1_WPF_.Simulation
                                              N(tl.Count(i, s => s != AirspaceTimeline.CLOSED) * step, "0"),
                                              N(tl.Count(i, s => s == (sbyte)CapacityStatus.Yellow) * step, "0"),
                                              N(tl.Count(i, s => s == (sbyte)CapacityStatus.Red) * step, "0"),
-                                             peak < 0 ? "" : N(tl.Load(i, peak) * 100, "0"), peak < 0 ? "" : T(tl.Starts[peak]));
+                                             peak < 0 ? "" : N(tl.Load(i, peak) * 100, "0"), peak < 0 ? ";" : T(tl.Starts[peak]));
                 }
             }
-            return Write(path, parameters, "Sector;ACC;Capacity per window;Entries;Average time inside (min);Open (min);Near limit (min);Overloaded (min);Peak load (%);Peak at", Rows());
+            Days(tl);
+            return Write(path, parameters, "Sector;ACC;Capacity per window;Entries;Average time inside (min);Open (min);Near limit (min);Overloaded (min);Peak load (%);" + H("Peak at"), Rows(), tl);
         }
 
         // Every overload episode (Overload report tab), in time order
@@ -104,7 +154,8 @@ namespace Projecte1_WPF_.Simulation
             var rows = tl.Overloads().OrderBy(o => o.From).ThenBy(o => o.Sector)
                          .Select(o => string.Join(";", o.Sector, o.Acc, T(o.From), T(o.To), N(o.Duration.TotalMinutes, "0"), o.PeakDemand,
                                                   N(o.CapacityPerWindow), N(o.PeakLoad * 100, "0"), o.PeakWindowText));
-            return Write(path, parameters, "Sector;ACC;From;To;Duration (min);Peak entries;Capacity per window;Peak load (%);Peak window", rows);
+            Days(tl);
+            return Write(path, parameters, "Sector;ACC;" + H("From") + ";" + H("To") + ";Duration (min);Peak entries;Capacity per window;Peak load (%);Peak window", rows, tl);
         }
     }
 }

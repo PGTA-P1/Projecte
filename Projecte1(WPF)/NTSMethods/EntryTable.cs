@@ -62,7 +62,7 @@ namespace Projecte1_WPF_.NTS
             table.BeginLoadData();
             foreach (var s in stays.OrderBy(x => x.In))
             {
-                DateTime entry = RoundToSecond(s.In), exit = RoundToSecond(s.Out);
+                DateTime entry = WholeSecond(s.In), exit = WholeSecond(s.Out);
                 table.Rows.Add(s.Entry.FlightId, s.Entry.Sector, Day(entry), entry.TimeOfDay, Day(exit), exit.TimeOfDay,
                                (int)(exit - entry).TotalSeconds, s.Entry.CallSign, s.Entry.Acc, s.Entry.Configuration,
                                s.Entry.Cause.ToString());
@@ -71,7 +71,7 @@ namespace Projecte1_WPF_.NTS
             return table;
         }
 
-        // Entry and exit are split into day and time of day (two columns each), UTC, rounded to the second
+        // Entry and exit are split into day and time of day (two columns each), UTC, to the whole second
         private static DataTable NewTable()
         {
             var table = new DataTable("Entries");
@@ -115,9 +115,11 @@ namespace Projecte1_WPF_.NTS
             return value == null || value == DBNull.Value ? "" : value.ToString();
         }
 
-        private static DateTime RoundToSecond(DateTime t)
+        // The second the moment is in (fraction dropped, not rounded): an entry at 10:59:59.6 stays in the window that
+        // ends at 11:00, so the demand recomputed from the file equals the demand the app shows
+        private static DateTime WholeSecond(DateTime t)
         {
-            return new DateTime((t.Ticks + TimeSpan.TicksPerSecond / 2) / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond, t.Kind);
+            return new DateTime(t.Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond, t.Kind);
         }
     }
 }

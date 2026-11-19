@@ -30,9 +30,9 @@ namespace Projecte1_WPF_
     public partial class ComparePanel : UserControl
     {
         private const double STRIP_W = 290, STRIP_H = 12;
-        private static readonly Brush Grey = Charts.Frozen(0x5A, 0x67, 0x73);
-        private static readonly Brush Link = Charts.Frozen(0x1F, 0x5F, 0xB4);
-        private static readonly Brush Rule = Charts.Frozen(0xE3, 0xEA, 0xF0);
+        private static readonly Brush Grey = Charts.Frozen(0x5E, 0x6A, 0x70);
+        private static readonly Brush Link = Charts.Frozen(0x1F, 0x6E, 0x6B);
+        private static readonly Brush Rule = Charts.Frozen(0xE1, 0xE5, 0xE3);
 
         private readonly Dictionary<string, (Border Pill, TextBlock Load, TextBlock Now, Line Cursor)> _live =
             new Dictionary<string, (Border, TextBlock, TextBlock, Line)>(StringComparer.OrdinalIgnoreCase);
@@ -133,8 +133,8 @@ namespace Projecte1_WPF_
 
         // The pill's background: the map colours, lighter, so the black figure stays readable
         private static Brush StatusTint(sbyte status) =>
-            status == (sbyte)CapacityStatus.Red ? Charts.Frozen(0xF2, 0xA0, 0xA0)
-            : status == (sbyte)CapacityStatus.Yellow ? Charts.Frozen(0xF6, 0xE0, 0x8A) : Charts.Frozen(0xB9, 0xE4, 0xB9);
+            status == (sbyte)CapacityStatus.Red ? Charts.Frozen(0xF3, 0xCF, 0xC9)
+            : status == (sbyte)CapacityStatus.Yellow ? Charts.Frozen(0xF6, 0xE5, 0xB5) : Charts.Frozen(0xD7, 0xEE, 0xDC);
 
         private static StackPanel Figure(string label, string value, string tip)
         {
@@ -145,5 +145,9 @@ namespace Projecte1_WPF_
         }
 
         private void Close_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+        public event EventHandler ExportRequested;
+        public bool PauseOnClose => PauseToggle.IsChecked == true;
+        private void Export_Click(object sender, RoutedEventArgs e) => ExportRequested?.Invoke(this, EventArgs.Empty);
     }
 }

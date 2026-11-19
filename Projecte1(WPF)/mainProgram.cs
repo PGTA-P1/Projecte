@@ -141,6 +141,15 @@ namespace Projecte1_WPF_
             Accs = DataFiles.ReadAccs(files[DataRole.Accs]);
             string cfgPath = files[DataRole.Configurations];
 
+            // Skip mode (chosen per file in the data files window): the reader leaves out what a bad line belongs to and
+            // the load says so in its warnings
+            List<string> Skip(DataRole role) => files.SkipBad.Contains(role) ? new List<string>() : null;
+            void Note(DataRole role, List<string> skipped)
+            {
+                if (skipped != null && skipped.Count > 0)
+                    LoadWarnings.Add($"{skipped.Count} skipped in {files.SourceName(role)}");
+            }
+
             // 1. Sector names used by those ACCs in the .cfg (names only, nothing else stored)
             var needed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (string raw in File.ReadLines(cfgPath))
@@ -155,7 +164,9 @@ namespace Projecte1_WPF_
                                                      $"({string.Join(", ", Accs.Take(5))}{(Accs.Count > 5 ? ", …" : "")}) in this file");
 
             // 2. Collapsed sectors, following nested ones (a CS can contain other CS)
-            SpcFile spc = new SpcReader().Read(files[DataRole.Airspaces]);
+            var skipSpc = Skip(DataRole.Airspaces);
+            SpcFile spc = new SpcReader().Read(files[DataRole.Airspaces], skipSpc);
+            Note(DataRole.Airspaces, skipSpc);
             var csById = new Dictionary<string, Airspace>(StringComparer.OrdinalIgnoreCase);
             foreach (Airspace a in spc.Airspaces)
                 if (a.Type == "CS") csById[a.Id] = a;
@@ -173,7 +184,9 @@ namespace Projecte1_WPF_
 
             // 3. Elementary sectors
             Elementary.Clear();
-            Elementary.AddRange(Read_ElementarySectors.LoadFromFile(files[DataRole.ElementarySectors], needed));
+            var skipSls = Skip(DataRole.ElementarySectors);
+            Elementary.AddRange(Read_ElementarySectors.LoadFromFile(files[DataRole.ElementarySectors], needed, skipSls));
+            Note(DataRole.ElementarySectors, skipSls);
             if (Elementary.Count == 0)
                 throw new DataFileException(files[DataRole.ElementarySectors], "none of the sectors used by the configurations of the ACCs is in this file");
 
@@ -182,7 +195,9 @@ namespace Projecte1_WPF_
             foreach (ElementarySector es in Elementary)
                 foreach (SectorVolume v in es.Volumes) blocks.Add(v.VolumeName);
             Airblocks.Clear();
-            Airblocks.AddRange(new Reader_Airblock().ReadFromFile(files[DataRole.Airblocks], blocks));
+            var skipAre = Skip(DataRole.Airblocks);
+            Airblocks.AddRange(new Reader_Airblock().ReadFromFile(files[DataRole.Airblocks], blocks, skipAre));
+            Note(DataRole.Airblocks, skipAre);
             if (Airblocks.Count == 0)
                 throw new DataFileException(files[DataRole.Airblocks], "none of the airblocks used by the elementary sectors is in this file");
             int missingBlocks = blocks.Count - Airblocks.Select(a => a.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count();
@@ -191,8 +206,10 @@ namespace Projecte1_WPF_
 
             // 5. Configurations of those ACCs
             Configurations.Clear();
+            var skipCfg = Skip(DataRole.Configurations);
             Configurations.AddRange(new ConfigurationReader()
-                .Read(cfgPath, Elementary, Collapsed, Accs).Configurations);
+                .Read(cfgPath, Elementary, Collapsed, Accs, skipCfg).Configurations);
+            Note(DataRole.Configurations, skipCfg);
             var withoutConfig = Accs.Where(a => !Configurations.Any(c => string.Equals(c.AccName, a, StringComparison.OrdinalIgnoreCase))).ToList();
             if (withoutConfig.Count > 0)
                 LoadWarnings.Add($"no configuration for {string.Join(", ", withoutConfig)}");
@@ -209,7 +226,9 @@ namespace Projecte1_WPF_
             var capacityNames = new HashSet<string>(needed, StringComparer.OrdinalIgnoreCase);
             capacityNames.UnionWith(Accs);
             Capacities.Clear();
-            Capacities.AddRange(new CapacityReader().Read(files[DataRole.Capacities], capacityNames).Capacities);
+            var skipCsv = Skip(DataRole.Capacities);
+            Capacities.AddRange(new CapacityReader().Read(files[DataRole.Capacities], capacityNames, skipCsv).Capacities);
+            Note(DataRole.Capacities, skipCsv);
             if (Capacities.Count == 0)
                 LoadWarnings.Add("no capacity for these sectors: every sector counts as without limit (always green)");
 
@@ -217,9 +236,61 @@ namespace Projecte1_WPF_
             Area = LatLonBox.FromAirblocks(Airblocks, AREA_MARGIN_DEG);
             Trajectories.Clear();
             if (Area != null)
-                Trajectories.AddRange(new Reader_So6().ReadFromFile(files[DataRole.Trajectories], Area));
+            {
+                var skipSo6 = Skip(DataRole.Trajectories);
+                Trajectories.AddRange(new Reader_So6().ReadFromFile(files[DataRole.Trajectories], Area, skipSo6));
+                Note(DataRole.Trajectories, skipSo6);
+            }
             if (Trajectories.Count == 0)
                 throw new DataFileException(files[DataRole.Trajectories], "no flight crosses the area of the ACCs");
+
+            CheckFilesMatch(files);
+        }
+
+        // Things in one file that another file does not have. They do not stop the load (what does not match is left
+        // out), but the window asks the user before going on: load anyway, load the default data, or not load
+        public List<string> Mismatches { get; } = new List<string>();
+
+        private void CheckFilesMatch(DataFiles files)
+        {
+            Mismatches.Clear();
+            // Short lines (the user asked for brief pop-ups): what, how many, a few names
+            void Add(string what, IEnumerable<string> names)
+            {
+                var list = names.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                if (list.Count > 0)
+                    Mismatches.Add($"{list.Count} {what}: {string.Join(", ", list.Take(3))}{(list.Count > 3 ? ", …" : "")}");
+            }
+
+            // ACCs (accs.txt) against the configurations and the opening scheme
+            Add("ACC(s) without configurations", Accs.Where(a => !Configurations.Any(c => string.Equals(c.AccName, a, StringComparison.OrdinalIgnoreCase))));
+            Add("ACC(s) without opening scheme", Accs.Where(a => OpeningScheme.GetRecords(a).Count == 0));
+
+            // Opening scheme against the configurations
+            Add("configuration(s) opened by the scheme but not in the .cfg",
+                OpeningScheme.Records.Where(r => FindConfiguration(r.AccName, r.ConfigurationName) == null).Select(r => r.AccName + " " + r.ConfigurationName));
+
+            // Configurations against the sectors (.sls) and the collapsed sectors (.spc)
+            Add("sector(s) of the configurations not found in the .sls or .spc", Configurations.SelectMany(c => c.NotFound));
+
+            // Collapsed sectors against the elementary ones
+            var known = new HashSet<string>(Elementary.Select(e => e.Name), StringComparer.OrdinalIgnoreCase);
+            known.UnionWith(Collapsed.Select(c => c.Id));
+            Add("collapsed sector(s) with a missing member", Collapsed.Where(c => c.Sectors.Any(m => !known.Contains(m.Name.Trim()))).Select(c => c.Id));
+
+            // Elementary sectors against the airblocks
+            var have = new HashSet<string>(Airblocks.Select(a => a.Name), StringComparer.OrdinalIgnoreCase);
+            Add("airblock(s) used by the sectors but not in the .are", Elementary.SelectMany(e => e.Volumes).Select(v => v.VolumeName).Where(b => !have.Contains(b)));
+
+            // Capacities
+            if (Capacities.Count == 0)
+                Mismatches.Add("No capacity for any sector (all count as without limit)");
+
+            // Traffic against the dates of the opening scheme
+            int outside = Trajectories.Count(t => t.End <= OpeningScheme.FirstStart || t.Start >= OpeningScheme.LastEnd);
+            if (outside > 0)
+                Mismatches.Add($"{outside:N0} of {Trajectories.Count:N0} flights outside the opening scheme's dates " +
+                               $"({OpeningScheme.FirstStart:dd/MM} - {OpeningScheme.LastEnd.AddMinutes(-1):dd/MM})");
         }
 
         // ------------------------------------------------------------------------------------------------

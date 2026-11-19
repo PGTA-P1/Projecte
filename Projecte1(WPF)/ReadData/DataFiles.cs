@@ -64,6 +64,9 @@ namespace Projecte1_WPF_.ReadData
             _names[role] = originalName;
         }
 
+        // Inputs read in skip mode (the user pressed Skip in the data files window): see Skips
+        public HashSet<DataRole> SkipBad { get; } = new HashSet<DataRole>();
+
         public string SourceName(DataRole role) => _names.TryGetValue(role, out string n) ? n : Path.GetFileName(this[role]);
 
         public bool IsDefault => Roles.All(r => string.Equals(this[r.Role], DefaultPath(r.Role), StringComparison.OrdinalIgnoreCase));
@@ -108,30 +111,31 @@ namespace Projecte1_WPF_.ReadData
 
         // CHECK of one file on its own, with its reader: a summary of what it holds, or DataFileException (file, line, what
         // is wrong). Cross-file problems (e.g. ACCs without configurations) are found by the load
-        public static string Check(DataRole role, string path)
+        // skipped: if not null (skip mode, see Skips), what the reader left out is noted there instead of stopping
+        public static string Check(DataRole role, string path, List<string> skipped = null)
         {
             switch (role)
             {
                 case DataRole.Airblocks:
-                    return $"{new Reader_Airblock().ReadFromFile(path).Length:N0} airblocks";
+                    return $"{new Reader_Airblock().ReadFromFile(path, null, skipped).Length:N0} airblocks";
                 case DataRole.ElementarySectors:
-                    return $"{Read_ElementarySectors.LoadFromFile(path).Count:N0} elementary sectors";
+                    return $"{Read_ElementarySectors.LoadFromFile(path, null, skipped).Count:N0} elementary sectors";
                 case DataRole.Airspaces:
-                    SpcFile spc = new SpcReader().Read(path);
+                    SpcFile spc = new SpcReader().Read(path, skipped);
                     return $"{spc.Airspaces.Count:N0} airspaces, {spc.Airspaces.Count(a => a.Type == "CS"):N0} collapsed sectors";
                 case DataRole.Configurations:
-                    var configs = new ConfigurationReader().Read(path, new List<ElementarySector>(), new List<Airspace>()).Configurations;
+                    var configs = new ConfigurationReader().Read(path, new List<ElementarySector>(), new List<Airspace>(), null, skipped).Configurations;
                     return $"{configs.Count:N0} configurations of {configs.Select(c => c.AccName).Distinct(StringComparer.OrdinalIgnoreCase).Count():N0} ACCs";
                 case DataRole.OpeningScheme:
                     OpeningScheme cos = Read_OpeningScheme.ReadFile(path);
                     return $"{cos.Records.Count:N0} records, {cos.Records.Select(r => r.AccName).Distinct(StringComparer.OrdinalIgnoreCase).Count():N0} ACCs, " +
                            $"{cos.FirstStart:dd/MM/yyyy} - {cos.LastEnd.AddMinutes(-1):dd/MM/yyyy}";
                 case DataRole.Trajectories:
-                    Trajectory[] flights = new Reader_So6().ReadFromFile(path);
+                    Trajectory[] flights = new Reader_So6().ReadFromFile(path, null, skipped);
                     DateTime first = flights.Min(f => f.Start), last = flights.Max(f => f.End);
                     return $"{flights.Length:N0} flights, {first:dd/MM HH:mm} - {last:dd/MM HH:mm}";
                 case DataRole.Capacities:
-                    return $"{new CapacityReader().Read(path).Capacities.Count:N0} sector capacities";
+                    return $"{new CapacityReader().Read(path, null, skipped).Capacities.Count:N0} sector capacities";
                 case DataRole.Accs:
                     HashSet<string> accs = ReadAccs(path);
                     return $"{accs.Count} ACCs: {string.Join(", ", accs.Take(6))}{(accs.Count > 6 ? ", …" : "")}";

@@ -21,6 +21,7 @@ namespace Projecte1_WPF_.ReadData
             var openingScheme = new OpeningScheme();
             int lineNumber = 0, found = 0;
 
+            var lines = new List<(OpeningSchemeRecord Record, LineParser Line)>();
             foreach (string rawLine in File.ReadLines(filePath))
             {
                 lineNumber++;
@@ -69,6 +70,20 @@ namespace Projecte1_WPF_.ReadData
                     throw p.Error($"the end {record.EndTime:hh\\:mm} is before the start {record.StartTime:hh\\:mm} (a period crossing midnight must be split into two lines)");
 
                 openingScheme.Records.Add(record);
+                lines.Add((record, p));
+            }
+
+            // Two periods of one ACC at the same time: which configuration is open would depend on the line order
+            foreach (var acc in lines.GroupBy(x => x.Record.AccName, StringComparer.OrdinalIgnoreCase))
+            {
+                (OpeningSchemeRecord Record, LineParser Line) previous = default;
+                foreach (var x in acc.OrderBy(x => x.Record.Start))
+                {
+                    if (previous.Record != null && x.Record.Start < previous.Record.End)
+                        throw x.Line.Error($"this period of {x.Record.AccName} starts before the one of line {previous.Line.Number:N0} ends " +
+                                           $"({previous.Record.Date:dd/MM/yyyy} {previous.Record.StartTime:hh\\:mm}-{previous.Record.EndTime:hh\\:mm}): two configurations open at once");
+                    previous = x;
+                }
             }
 
             if (found == 0)

@@ -70,6 +70,72 @@ namespace Projecte1_WPF_.ArcGisMethods
                            : new GraphicsOverlay();
         }
 
+        // The graphics of each sector (graphic and its overlay) and its fill status, so removing, recolouring and hiding a
+        // sector touch only its own graphics
+        private readonly Dictionary<string, List<(Graphic Graphic, GraphicsOverlay Overlay)>> _byName =
+            new Dictionary<string, List<(Graphic, GraphicsOverlay)>>(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _statusOf = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        // Geometry built once and reused at every redraw (thread-safe, so Prepare can fill it in the background):
+        // the flat 2D shapes of each plan, and each 3D line at its height
+        private sealed class Flat { public Polygon Fill; public Polyline Outline, Members, Steps; }
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<SectorPlan, Flat> _flat =
+            new System.Collections.Concurrent.ConcurrentDictionary<SectorPlan, Flat>();
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<(object Line, double Z), Polyline> _lines3D =
+            new System.Collections.Concurrent.ConcurrentDictionary<(object, double), Polyline>();
+
+        // Forgets the geometry of plans no longer used (new flight-level range or new data set)
+        public static void ClearCache()
+        {
+            _flat.Clear();
+            _lines3D.Clear();
+        }
+
+        private static Flat FlatOf(SectorPlan plan) => _flat.GetOrAdd(plan, p =>
+        {
+            var f = new Flat();
+            if (GeometryEngine.Simplify(new Polygon(p.Outline.Select(Points).ToList(), SpatialReferences.Wgs84)) is Polygon polygon && !polygon.IsEmpty)
+                f.Fill = polygon;
+            f.Outline = new Polyline(p.Outline.Select(Points), SpatialReferences.Wgs84);
+            if (p.MemberBorders.Count > 0)
+                f.Members = new Polyline(p.MemberBorders.Select(Points), SpatialReferences.Wgs84);
+            if (p.LevelSteps.Count > 0)
+                f.Steps = new Polyline(p.LevelSteps.Select(Points), SpatialReferences.Wgs84);
+            return f;
+        });
+
+        private static Polyline Line3DOf(List<(double Latitude, double Longitude)> line, double topMetres) =>
+            _lines3D.GetOrAdd((line, topMetres), _ => Line3D(line, topMetres));
+
+        // Builds the geometry of a plan ahead of time (any thread); bands as for Add
+        public static void Prepare(SectorPlan plan, IList<IMergedSector> bands, bool threeD)
+        {
+            if (plan == null || plan.Outline.Count == 0)
+                return;
+            if (!threeD)
+            {
+                FlatOf(plan);
+                return;
+            }
+            if (bands != null)
+                foreach (IMergedSector band in bands)
+                    foreach (var ring in band.OuterRings)
+                        Line3DOf(ring, TopMetres(band));
+            for (int i = 0; i < plan.MemberBorders.Count; i++)
+                Line3DOf(plan.MemberBorders[i], Math.Min(plan.MemberBorderLevels[i], MAX_VISIBLE_FL) * FL_TO_M);
+        }
+
+        private void AddGraphic(GraphicsOverlay overlay, Geometry geometry, string name, string status)
+        {
+            Graphic g = Named(new Graphic(geometry), name, status);
+            overlay.Graphics.Add(g);
+            if (!_byName.TryGetValue(name, out var mine))
+                _byName[name] = mine = new List<(Graphic, GraphicsOverlay)>();
+            mine.Add((g, overlay));
+            if (status != null)
+                _statusOf[name] = status;
+        }
+
         // bands: the 3D outlines of the sector (one per FL band, as the prisms), for the heights of the 3D lines
         public void Add(SectorPlan plan, IList<IMergedSector> bands)
         {
@@ -77,14 +143,14 @@ namespace Projecte1_WPF_.ArcGisMethods
                 return;
             if (!_threeD)
             {
-                var rings = plan.Outline.Select(Points).ToList();
-                if (GeometryEngine.Simplify(new Polygon(rings, SpatialReferences.Wgs84)) is Polygon polygon && !polygon.IsEmpty)
-                    _fills.Graphics.Add(Named(new Graphic(polygon), plan.Name, _defaultStatus));
-                _outlines.Graphics.Add(Named(new Graphic(new Polyline(plan.Outline.Select(Points), SpatialReferences.Wgs84)), plan.Name, null));
-                if (plan.MemberBorders.Count > 0)
-                    _memberBorders.Graphics.Add(Named(new Graphic(new Polyline(plan.MemberBorders.Select(Points), SpatialReferences.Wgs84)), plan.Name, null));
-                if (plan.LevelSteps.Count > 0)
-                    _levelSteps.Graphics.Add(Named(new Graphic(new Polyline(plan.LevelSteps.Select(Points), SpatialReferences.Wgs84)), plan.Name, null));
+                Flat f = FlatOf(plan);
+                if (f.Fill != null)
+                    AddGraphic(_fills, f.Fill, plan.Name, _defaultStatus);
+                AddGraphic(_outlines, f.Outline, plan.Name, null);
+                if (f.Members != null)
+                    AddGraphic(_memberBorders, f.Members, plan.Name, null);
+                if (f.Steps != null)
+                    AddGraphic(_levelSteps, f.Steps, plan.Name, null);
                 return;
             }
 
@@ -96,10 +162,9 @@ namespace Projecte1_WPF_.ArcGisMethods
                 return;
             foreach (IMergedSector band in bands)
                 foreach (var ring in band.OuterRings)
-                    _outlines.Graphics.Add(Named(new Graphic(Line3D(ring, TopMetres(band))), plan.Name, null));
+                    AddGraphic(_outlines, Line3DOf(ring, TopMetres(band)), plan.Name, null);
             for (int i = 0; i < plan.MemberBorders.Count; i++)
-                _memberBorders.Graphics.Add(Named(new Graphic(Line3D(plan.MemberBorders[i], Math.Min(plan.MemberBorderLevels[i], MAX_VISIBLE_FL) * FL_TO_M)),
-                                                  plan.Name, null));
+                AddGraphic(_memberBorders, Line3DOf(plan.MemberBorders[i], Math.Min(plan.MemberBorderLevels[i], MAX_VISIBLE_FL) * FL_TO_M), plan.Name, null);
         }
 
         private const double FL_TO_M = 100 * 0.3048;
@@ -113,27 +178,32 @@ namespace Projecte1_WPF_.ArcGisMethods
         // Shows or hides every line (and the 2D fill) of the sector
         public void SetVisible(string name, bool visible)
         {
-            foreach (GraphicsOverlay o in Overlays())
-                foreach (Graphic g in o.Graphics)
-                    if ((string)g.Attributes["name"] == name && g.IsVisible != visible)
+            if (_byName.TryGetValue(name, out var mine))
+                foreach (var (g, _) in mine)
+                    if (g.IsVisible != visible)
                         g.IsVisible = visible;
         }
 
         public void Remove(string name)
         {
-            foreach (GraphicsOverlay o in Overlays())
-                foreach (Graphic g in o.Graphics.Where(g => (string)g.Attributes["name"] == name).ToList())
-                    o.Graphics.Remove(g);
+            if (!_byName.TryGetValue(name, out var mine))
+                return;
+            foreach (var (g, overlay) in mine)
+                overlay.Graphics.Remove(g);
+            _byName.Remove(name);
+            _statusOf.Remove(name);
         }
 
         // Fill colour of a sector (2D only)
         public void SetStatus(string name, string status)
         {
-            if (_fills == null)
+            if (_fills == null || !_byName.TryGetValue(name, out var mine) ||
+                (_statusOf.TryGetValue(name, out string current) && current == status))
                 return;
-            foreach (Graphic g in _fills.Graphics)
-                if ((string)g.Attributes["name"] == name && (string)g.Attributes["status"] != status)
+            foreach (var (g, overlay) in mine)
+                if (overlay == _fills)
                     g.Attributes["status"] = status;
+            _statusOf[name] = status;
         }
 
         // Line options, and the whole plan hidden (density map); the overlays show what all three allow
@@ -155,6 +225,8 @@ namespace Projecte1_WPF_.ArcGisMethods
         {
             foreach (GraphicsOverlay o in Overlays())
                 o.Graphics.Clear();
+            _byName.Clear();
+            _statusOf.Clear();
         }
 
         private IEnumerable<GraphicsOverlay> Overlays()

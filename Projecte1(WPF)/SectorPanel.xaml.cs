@@ -121,7 +121,7 @@ namespace Projecte1_WPF_
                 var row = new Grid { Margin = new Thickness(0, 1, 0, 1) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                var bar = new Rectangle { Height = 14, HorizontalAlignment = HorizontalAlignment.Left, Fill = Charts.Frozen(0xD6, 0xE4, 0xF5),
+                var bar = new Rectangle { Height = 14, HorizontalAlignment = HorizontalAlignment.Left, Fill = Charts.Frozen(0xDC, 0xEB, 0xE9),
                                           Width = 1 + 100.0 * count / max };
                 var label = new TextBlock { Text = name, FontSize = 11, Margin = new Thickness(3, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
                 var value = new TextBlock { Text = count.ToString(CultureInfo.InvariantCulture), FontSize = 11, FontWeight = FontWeights.SemiBold };
@@ -134,7 +134,7 @@ namespace Projecte1_WPF_
         }
 
         // Flight-level profile: one row per band (highest on top), a stacked bar climbing / level / descending
-        private static readonly Brush Climb = Charts.Frozen(0x2E, 0xA0, 0x43), LevelFlight = Charts.Frozen(0x1F, 0x6F, 0xD1), Descend = Charts.Frozen(0xF0, 0x8C, 0x00);
+        private static readonly Brush Climb = Charts.Frozen(0x2E, 0xA0, 0x43), LevelFlight = Charts.Frozen(0x1F, 0x6E, 0x6B), Descend = Charts.Frozen(0xF0, 0x8C, 0x00);
 
         private void DrawLevels()
         {
@@ -214,7 +214,7 @@ namespace Projecte1_WPF_
         // Click or drag moves the timeline; the wheel zooms around the mouse, Shift + wheel moves, double-click shows all
         // ------------------------------------------------------------------------------------------------
 
-        private static readonly Brush AircraftLine = Charts.Frozen(0x1F, 0x2D, 0x3D, 0xB0); // dark, a bit transparent: the bars show through
+        private static readonly Brush AircraftLine = Charts.Frozen(0x1F, 0x2A, 0x30, 0xB0); // dark, a bit transparent: the bars show through
         private static readonly TimeSpan MIN_VIEW = TimeSpan.FromHours(1);
 
         private DateTime _fullFrom, _fullTo;        // the sector's whole range

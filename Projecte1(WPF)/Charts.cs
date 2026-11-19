@@ -14,10 +14,10 @@ namespace Projecte1_WPF_
         public static readonly Brush Green = Frozen(0x00, 0xAA, 0x00);
         public static readonly Brush Yellow = Frozen(0xF0, 0xC8, 0x00);
         public static readonly Brush Red = Frozen(0xDC, 0x14, 0x14);
-        public static readonly Brush Closed = Frozen(0xE6, 0xE9, 0xED);
-        public static readonly Brush Axis = Frozen(0x8A, 0x97, 0xA6);
-        public static readonly Brush Text = Frozen(0x40, 0x40, 0x40);
-        public static readonly Brush Cursor = Frozen(0x1F, 0x6F, 0xD1);
+        public static readonly Brush Closed = Frozen(0xEC, 0xEF, 0xEE);
+        public static readonly Brush Axis = Frozen(0x9A, 0xA3, 0xA6);
+        public static readonly Brush Text = Frozen(0x1F, 0x2A, 0x30);
+        public static readonly Brush Cursor = Frozen(0x1F, 0x6E, 0x6B);
 
         // Software rendering for a window shown over the ArcGIS scene (the analysis and data files windows): with hardware
         // rendering their content sometimes stayed blank (white), although they worked. Light windows: the cost is nil

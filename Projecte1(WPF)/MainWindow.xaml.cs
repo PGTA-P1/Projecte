@@ -22,6 +22,14 @@ namespace Projecte1_WPF_
         // Timeline: entry/exit markers stay this long in real time, whatever the speed
         private static readonly TimeSpan MARKER_LIFE = TimeSpan.FromSeconds(2);
 
+        // A marker also lasts at most this much simulated time. Up to 300x that is longer than MARKER_LIFE, so nothing
+        // changes there; at 1800x two real seconds were a simulated hour, thousands of markers on the map at once, each one
+        // added and removed by hand: the main cost of a tick at that speed
+        private static readonly TimeSpan MARKER_MAX_SIMULATED = TimeSpan.FromMinutes(10);
+
+        private TimeSpan MarkerLife() =>
+            TimeSpan.FromSeconds(Math.Min(MARKER_LIFE.TotalSeconds, MARKER_MAX_SIMULATED.TotalSeconds / Math.Max(1, _speed)));
+
         // Simulated seconds per real second
         private static readonly int[] SPEEDS = { 1, 10, 60, 120, 300, 600, 1800 };
         private const int DEFAULT_SPEED = 60;
@@ -41,7 +49,31 @@ namespace Projecte1_WPF_
         private bool _sliderByCode;          // slider moved by SetTime, not by the user
 
         // Results > Export entries writes Exports/entries.csv next to the program
-        private static string ExportsFolder { get { return System.IO.Path.Combine(AppContext.BaseDirectory, "Exports"); } }
+        // EXPORT FOLDER: where every export is saved. Chosen by the user (location and name) in ExportFolderWindow, asked
+        // once before the first export and changed in Results > Export folder…; kept between sessions (ExportFolder)
+        private string _exportsFolder = ExportFolder.Load();
+        private string ExportsFolder { get { return _exportsFolder ?? ExportFolder.Default; } }
+
+        // Before an export: the first time (no folder chosen yet, in this or an earlier session) the user is asked.
+        // False = the user cancelled, so nothing is exported
+        private bool HaveExportFolder()
+        {
+            return _exportsFolder != null || ChooseExportFolder();
+        }
+
+        private bool ChooseExportFolder()
+        {
+            var window = new ExportFolderWindow(ExportsFolder) { Owner = this };
+            if (window.ShowDialog() != true)
+                return false;
+            _exportsFolder = window.Folder;
+            ExportFolder.Save(_exportsFolder);
+            ShowNotice("Exports are saved in " + _exportsFolder);
+            return true;
+        }
+
+        private void ExportFolder_Click(object sender, RoutedEventArgs e) => ChooseExportFolder();
+
         private const string ENTRIES_CSV = "entries.csv";
 
         public MainWindow(mainProgram program)
@@ -86,11 +118,8 @@ namespace Projecte1_WPF_
             SectorInfoPanel.ExportRequested += SectorPanel_ExportRequested;
             ComparePanelView.OpenRequested += SelectAndZoom;
             ComparePanelView.RemoveRequested += name => SetTicked(name, false);
-            ComparePanelView.CloseRequested += (s, e) => { ShowAllSectors(); FrameArea(); };  // closing a panel always flies home
-
-            // Title bar: the app icon when there is one, otherwise a plane glyph
-            AppIconImage.Visibility = Icon != null ? Visibility.Visible : Visibility.Collapsed;
-            AppGlyph.Visibility = Icon != null ? Visibility.Collapsed : Visibility.Visible;
+            ComparePanelView.CloseRequested += (s, e) => ShowAllSectors();  // closing a panel flies home (PanelClosed)
+            ComparePanelView.ExportRequested += ComparePanel_ExportRequested;
 
             // Last resort: an unexpected error on the UI thread is reported instead of closing the app without a word
             System.Windows.Application.Current.DispatcherUnhandledException += (s, args) =>
@@ -109,14 +138,17 @@ namespace Projecte1_WPF_
         }
 
         // ------------------------------------------------------------------------------------------------
-        // STATUS LINE and progress bar for the work that runs in the background (loading, export)
+        // WORK IN PROGRESS for what runs in the background (loading, computing, exporting): a box over the bottom of the
+        // map with the message and a bar, shown only meanwhile. The outcome (totals, file saved, error) is a fading notice.
+        // There is no status line any more: the user found it hard to see and not worth its row
         // ------------------------------------------------------------------------------------------------
 
         // fraction 0..1, or null when the length is unknown (moving bar)
         private void ShowProgress(string message, double? fraction)
         {
             StatusText.Text = message;
-            WorkProgress.Visibility = Visibility.Visible;
+            WorkBox.Visibility = Visibility.Visible;
+            EmptyHint.Visibility = Visibility.Collapsed;
             WorkProgress.IsIndeterminate = fraction == null;
             if (fraction != null)
                 WorkProgress.Value = fraction.Value * WorkProgress.Maximum;
@@ -125,7 +157,10 @@ namespace Projecte1_WPF_
         private void HideProgress(string message)
         {
             StatusText.Text = message;
-            WorkProgress.Visibility = Visibility.Collapsed;
+            WorkBox.Visibility = Visibility.Collapsed;
+            EmptyHint.Visibility = _simulation == null ? Visibility.Visible : Visibility.Collapsed;
+            if (!string.IsNullOrEmpty(message))
+                ShowNotice(message);
         }
 
         // ------------------------------------------------------------------------------------------------
@@ -155,6 +190,12 @@ namespace Projecte1_WPF_
         // together, stop the load with the reader's message (file, line, what is wrong)
         private async Task LoadDataAsync(DataFiles files)
         {
+            // Never two computations on the same data: the load replaces the lists the entry computation is reading
+            if (_recomputing || !DefaultDataItem.IsEnabled)
+            {
+                ShowNotice("Wait until the current computation ends, then load the data");
+                return;
+            }
             if (_simulation != null &&
                 MessageBox.Show(this, "Load another data set? The current simulation, its entries and analysis are cleared.",
                                 "Load data", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
@@ -162,10 +203,31 @@ namespace Projecte1_WPF_
             ClearLoadedData();
             DefaultDataItem.IsEnabled = OwnFilesItem.IsEnabled = false;
             ApplyParamBTN.IsEnabled = false;   // ComputeEntries reads the parameters while it runs
+            bool loadDefaultInstead = false;   // the user's answer when the files do not match
             try
             {
                 ShowProgress(files.IsDefault ? "Loading the files of the Archives folder..." : "Loading your files...", null);
                 await Task.Run(() => _program.LoadFiltered(files));
+
+                // The files read well but do not fully match each other (e.g. the opening scheme opens configurations the
+                // .cfg does not have): the user decides. Yes = go on without what does not match, No = the default data
+                // instead, Cancel = nothing loaded
+                if (_program.Mismatches.Count > 0)
+                {
+                    string list = string.Join("\n", _program.Mismatches.Take(6).Select(m => "• " + m)) +
+                                  (_program.Mismatches.Count > 6 ? $"\n… and {_program.Mismatches.Count - 6} more" : "");
+                    MessageBoxResult answer = MessageBox.Show(this,
+                        "The files do not match each other:\n\n" + list +
+                        "\n\nLoad anyway, without these?\nNo = load the default data.   Cancel = load nothing.",
+                        "The files do not match", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
+                    if (answer != MessageBoxResult.Yes)
+                    {
+                        ClearLoadedData();
+                        loadDefaultInstead = answer == MessageBoxResult.No;
+                        HideProgress(loadDefaultInstead ? "" : "Nothing was loaded: the files do not match each other.");
+                        throw new OperationCanceledException();   // out of the load; the default data, if chosen, after the finally
+                    }
+                }
                 FrameArea();
 
                 // Entries of every trajectory (parallel, a few seconds) and the outlines of every sector at the same time
@@ -181,6 +243,7 @@ namespace Projecte1_WPF_
                 await Task.WhenAll(entries, outlines);
                 _openSectors.SetOutlines(outlines.Result);
                 Debug.WriteLine("[Load] " + entries.Result);
+                SetFlTop();
                 await ApplyFlightLevelsAsync(force: true); // the range chosen (the outlines were built for all levels)
 
                 // Files that read well but do not meet: no flight inside an open sector (e.g. other dates)
@@ -191,12 +254,16 @@ namespace Projecte1_WPF_
                         $"({_program.Trajectories.Min(t => t.Start):dd/MM/yyyy} - {_program.Trajectories.Max(t => t.End):dd/MM/yyyy})?");
 
                 await BuildSimulationAsync();
-                StartSimBTN.IsEnabled = true;
                 AnalysisMenu.IsEnabled = true;
                 MapFilterBTN.Visibility = Visibility.Visible;
+                ShowTimeline();
                 string warnings = _program.LoadWarnings.Count == 0 ? "" : " Note: " + string.Join("; ", _program.LoadWarnings) + ".";
                 HideProgress($"{_simulation.FlightCount:N0} flights cross the ACCs, {OpenEntryCount():N0} sector entries ({EntryParametersText()}). " +
-                             $"Airspace open at {_simulation.Start:dd/MM HH:mm} UTC, when the first of them takes off. Ready: Start simulation.{warnings}");
+                             $"Airspace open at {_simulation.Start:dd/MM HH:mm} UTC, when the first of them takes off. Press Play to run it.{warnings}");
+            }
+            catch (OperationCanceledException)
+            {
+                // The user's answer to "the files do not match": already cleared and said
             }
             catch (DataFileException ex)
             {
@@ -214,15 +281,19 @@ namespace Projecte1_WPF_
             catch (Exception ex) // anything else (e.g. NTS geometry of an odd user file): reported, never a crash
             {
                 Debug.WriteLine(ex);
+                // A failure inside the parallel computation arrives wrapped ("One or more errors occurred"): show the cause
+                string cause = (ex as AggregateException)?.InnerException?.Message ?? ex.Message;
                 ClearLoadedData();
-                HideProgress("Could not load the data: " + ex.Message);
-                MessageBox.Show(this, ex.Message, "Could not load the data", MessageBoxButton.OK, MessageBoxImage.Error);
+                HideProgress("Could not load the data: " + cause);
+                MessageBox.Show(this, cause + "\n\nNothing was loaded.", "Could not load the data", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
                 ApplyParamBTN.IsEnabled = true;
                 DefaultDataItem.IsEnabled = OwnFilesItem.IsEnabled = true;
             }
+            if (loadDefaultInstead)
+                await LoadDataAsync(DataFiles.Default());
         }
 
         // Everything that belongs to the data set loaded: before loading another one, or after a failed load
@@ -231,8 +302,15 @@ namespace Projecte1_WPF_
             if (_simulation == null && _program.Files == null)
                 return;
             SetPlaying(false);
-            if (_focusSector != null)
+            // Also the ticks of a comparison: they (and the map's "only these sectors") used to survive the load, so
+            // the new data set came up with no sector on the map when it did not have those sectors
+            if (_focusSector != null || _ticked.Count > 0 || _openSectors.Only != null)
+            {
+                _clearingData = true;   // no flight home: the load frames the new area
                 ShowAllSectors();
+                _clearingData = false;
+            }
+            _pausedBeforeClosing = null;
             _analysis?.Close();
             if (ShowDensityBox.IsChecked == true)
                 SectorsLayerBTN.IsChecked = true;
@@ -243,12 +321,14 @@ namespace Projecte1_WPF_
             _timelineTask = null;
             _flightsById.Clear();
             _openByFlightSource = null;
+            _sectorData.Clear();
+            _selectedSector = null;
             _sectorRows.Clear();
             _listKey = default;
             SectorSearchBox.Text = "";
             OpenPeriodMarks.Children.Clear();
             TimelineBar.Visibility = ResultsBar.Visibility = MapFilterBTN.Visibility = Visibility.Collapsed;
-            StartSimBTN.IsEnabled = AnalysisMenu.IsEnabled = false;
+            AnalysisMenu.IsEnabled = false;
         }
 
         // Simulation and demand of the current entries; the airspace (coloured) at the start, or at the timeline time once
@@ -302,21 +382,21 @@ namespace Projecte1_WPF_
             return $"minimum time {_program.Parameters.MinTimeInSector:0.##} s, reentry {_program.Parameters.ReentryTime:0.##} s";
         }
 
-        // Shows the timeline and plays from the start (again from the start if pressed later)
-        private void StartSimulation_Click(object sender, RoutedEventArgs e)
+        // Once the data is loaded: the timeline at the start of the simulation, paused (Play runs it), with Analysis and
+        // Results. There is no Start simulation button any more: the user found it unnecessary
+        private void ShowTimeline()
         {
             if (_simulation == null)
                 return;
             TimelineBar.Visibility = Visibility.Visible;
-            ResultsBar.Visibility = Visibility.Visible; // results of the simulation, available once it has been run
-            StatusText.Text = $"{_simulation.FlightCount:N0} flights cross the ACCs, {OpenEntryCount():N0} sector entries ({EntryParametersText()}).";
+            ResultsBar.Visibility = Visibility.Visible;
             SetTime(_simulation.Start, continuous: false);
             if (!_timer.IsEnabled)
             {
                 _clock.Start();
-                _timer.Start();
+                _timer.Start();   // runs while paused too, so markers expire
             }
-            SetPlaying(true);
+            SetPlaying(false);
         }
 
         // ------------------------------------------------------------------------------------------------
@@ -328,6 +408,8 @@ namespace Projecte1_WPF_
         private async void ExportEntries_Click(object sender, RoutedEventArgs e)
         {
             if (_simulation == null)
+                return;
+            if (!HaveExportFolder())
                 return;
             string csv = System.IO.Path.Combine(ExportsFolder, ENTRIES_CSV);
             ExportEntriesItem.IsEnabled = false;
@@ -399,6 +481,8 @@ namespace Projecte1_WPF_
         private async Task ExportAnalysisAsync(params string[] files)
         {
             if (_simulation == null)
+                return;
+            if (!HaveExportFolder())
                 return;
             ShowProgress($"Exporting {string.Join(", ", files)}...", null);
             try
@@ -535,13 +619,15 @@ namespace Projecte1_WPF_
         }
 
         // ------------------------------------------------------------------------------------------------
-        // FLIGHT LEVELS SHOWN (two-handle slider of the strip, FL 0-600, 600 = no upper limit). Display only: the sectors
+        // FLIGHT LEVELS SHOWN (two-handle slider of the strip, FL 0 to the traffic top, see SetFlTop). Display only: the sectors
         // are cut to the range (3D prisms cut, 2D plans rebuilt for the bands in it, sectors entirely outside not drawn)
         // and the aircraft and markers outside it are hidden; entries, demand and colours do not change. Applied
         // FL_APPLY_DELAY after the last move, so dragging does not rebuild the plans at every step
         // ------------------------------------------------------------------------------------------------
 
-        private const int FL_SLIDER_MAX = 600;       // top of the slider = no upper limit (FL999 in the files)
+        // Top of the slider: the highest flight level the traffic reaches + 10, rounded up to 10 (SetFlTop after a load;
+        // 600 before). At the top the range has no upper limit: sectors are drawn whole and every aircraft is shown
+        private int FL_SLIDER_MAX => (int)FlToSlider.Maximum;
         private const int FL_MIN_GAP = 10;           // the two handles stay at least this far apart
         private static readonly TimeSpan FL_APPLY_DELAY = TimeSpan.FromMilliseconds(350);
         private DispatcherTimer _flApplyTimer;
@@ -564,7 +650,7 @@ namespace Projecte1_WPF_
                 if (FlToSlider.Value - FlFromSlider.Value < FL_MIN_GAP) FlFromSlider.Value = FlToSlider.Value - FL_MIN_GAP;
             }
             int from = (int)FlFromSlider.Value, to = (int)FlToSlider.Value;
-            FlRangeText.Text = $"FL{from:000} - {(to >= FL_SLIDER_MAX ? "600+" : to.ToString("000"))}";
+            FlRangeText.Text = $"FL{from:000} - {to:000}";
             UpdateFlRangeFill();
 
             if (_flApplyTimer == null)
@@ -577,6 +663,24 @@ namespace Projecte1_WPF_
         }
 
         private void FlRangeTrack_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateFlRangeFill();
+
+        // The slider ends at the highest flight level of the traffic that crosses the ACCs + 10 (rounded up to 10), not at
+        // a fixed 600: the top of the scale is then the real top of the traffic. A handle at the old top moves to the new one
+        private void SetFlTop()
+        {
+            int max = 0;
+            foreach (var f in _program.RelevantTrajectories)
+                foreach (var s in f.Segments)
+                    max = Math.Max(max, Math.Max(s.FLBegin, s.FLEnd));
+            int top = Math.Max(FL_MIN_GAP, (int)Math.Ceiling((max + 10) / 10.0) * 10);
+            bool toAtTop = FlToSlider.Value >= FlToSlider.Maximum;
+            FlFromSlider.Maximum = FlToSlider.Maximum = top;
+            if (toAtTop || FlToSlider.Value > top)
+                FlToSlider.Value = top;
+            if (FlFromSlider.Value > top - FL_MIN_GAP)
+                FlFromSlider.Value = top - FL_MIN_GAP;
+            FlSlider_ValueChanged(FlToSlider, null);
+        }
 
         // Blue part of the track between the two handles (the handle centres move between 7 px and width - 7 px)
         private void UpdateFlRangeFill()
@@ -624,13 +728,20 @@ namespace Projecte1_WPF_
 
         public class SectorRow : System.ComponentModel.INotifyPropertyChanged
         {
-            private static readonly System.Windows.Media.Brush GreenBrush = Frozen(0xB9, 0xE4, 0xB9);
-            private static readonly System.Windows.Media.Brush YellowBrush = Frozen(0xF6, 0xE0, 0x8A);
-            private static readonly System.Windows.Media.Brush RedBrush = Frozen(0xF2, 0xA0, 0xA0);
+            private static readonly System.Windows.Media.Brush GreenBrush = Frozen(0xD7, 0xEE, 0xDC);
+            private static readonly System.Windows.Media.Brush YellowBrush = Frozen(0xF6, 0xE5, 0xB5);
+            private static readonly System.Windows.Media.Brush RedBrush = Frozen(0xF3, 0xCF, 0xC9);
+            // Text on the pill: a dark shade of the same status, readable on its tint
+            private static readonly System.Windows.Media.Brush GreenInk = Frozen(0x25, 0x6B, 0x3B);
+            private static readonly System.Windows.Media.Brush YellowInk = Frozen(0x7A, 0x54, 0x00);
+            private static readonly System.Windows.Media.Brush RedInk = Frozen(0x9E, 0x2C, 0x1E);
 
-            public string Sector { get; set; }
-            public string Acc { get; set; }
-            public string Configuration { get; set; }
+            // Every property announces only a real change: a row of the grid is a slot that shows one sector after another
+            // (see SyncSlots), and an unchanged text must not make the grid lay out again
+            private string _sector, _acc, _configuration;
+            public string Sector { get => _sector; set => Set(ref _sector, value, nameof(Sector)); }
+            public string Acc { get => _acc; set => Set(ref _acc, value, nameof(Acc)); }
+            public string Configuration { get => _configuration; set => Set(ref _configuration, value, nameof(Configuration)); }
 
             // Ticked in the list: shown on the map (MainWindow._ticked is the source of truth)
             private bool _isChecked;
@@ -641,10 +752,21 @@ namespace Projecte1_WPF_
                 {
                     if (_isChecked == value) return;
                     _isChecked = value;
-                    PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsChecked)));
+                    Raise(nameof(IsChecked));
                 }
             }
-            public double? Hourly { get; set; }       // nominal capacity per hour, null = no limit
+
+            private double? _hourly;
+            public double? Hourly                      // nominal capacity per hour, null = no limit
+            {
+                get => _hourly;
+                set
+                {
+                    if (_hourly == value) return;
+                    _hourly = value;
+                    Raise(nameof(Hourly)); Raise(nameof(CapacityText)); Raise(nameof(CapacitySort));
+                }
+            }
             public string CapacityText => Hourly == null ? "none" : Hourly.Value.ToString("0.#", CultureInfo.InvariantCulture);
             public double CapacitySort => Hourly ?? double.MaxValue;
 
@@ -652,16 +774,50 @@ namespace Projecte1_WPF_
             public double Load { get; private set; }  // demand / capacity in the window; -1 = no limit
             public string LoadText => Load < 0 ? "-" : (Load * 100).ToString("0", CultureInfo.InvariantCulture) + " %";
             public System.Windows.Media.Brush StatusBrush { get; private set; }
+            public System.Windows.Media.Brush StatusInk { get; private set; }
 
             public void SetValues(int demand, double? capacityInWindow, CapacityStatus status)
             {
-                Demand = demand;
-                Load = capacityInWindow == null ? -1 : demand / capacityInWindow.Value;
-                StatusBrush = status == CapacityStatus.Red ? RedBrush : status == CapacityStatus.Yellow ? YellowBrush : GreenBrush;
-                // Named one by one: the list's live sorting watches the sorted property by name
-                foreach (string property in new[] { nameof(Demand), nameof(Load), nameof(LoadText), nameof(StatusBrush) })
-                    PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(property));
+                double load = capacityInWindow == null ? -1 : demand / capacityInWindow.Value;
+                var brush = status == CapacityStatus.Red ? RedBrush : status == CapacityStatus.Yellow ? YellowBrush : GreenBrush;
+                var ink = status == CapacityStatus.Red ? RedInk : status == CapacityStatus.Yellow ? YellowInk : GreenInk;
+                SetValues(demand, load, brush, ink);
             }
+
+            private void SetValues(int demand, double load, System.Windows.Media.Brush brush, System.Windows.Media.Brush ink)
+            {
+                bool demandChanged = demand != Demand || StatusBrush == null, loadChanged = load != Load || StatusBrush == null;
+                bool statusChanged = brush != StatusBrush;
+                Demand = demand;
+                Load = load;
+                StatusBrush = brush;
+                StatusInk = ink;
+                if (demandChanged) Raise(nameof(Demand));
+                if (loadChanged) { Raise(nameof(Load)); Raise(nameof(LoadText)); }
+                if (statusChanged) { Raise(nameof(StatusBrush)); Raise(nameof(StatusInk)); }
+            }
+
+            // This slot now shows that sector. The name first: setting IsChecked raises the tick box's Checked event, whose
+            // handler reads the name of the row
+            public void ShowAs(SectorRow s, bool ticked)
+            {
+                Sector = s.Sector;
+                Acc = s.Acc;
+                Configuration = s.Configuration;
+                Hourly = s.Hourly;
+                IsChecked = ticked;
+                SetValues(s.Demand, s.Load, s.StatusBrush, s.StatusInk);
+            }
+
+            private void Set(ref string field, string value, string property)
+            {
+                if (field == value) return;
+                field = value;
+                Raise(property);
+            }
+
+            private void Raise(string property) =>
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(property));
 
             public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
 
@@ -675,37 +831,153 @@ namespace Projecte1_WPF_
 
         private readonly System.Collections.ObjectModel.ObservableCollection<SectorRow> _sectorRows =
             new System.Collections.ObjectModel.ObservableCollection<SectorRow>();
-        private System.ComponentModel.ICollectionView _sectorView;
         private int _demandVersion;
         private (DateTime WindowStart, int DrawVersion, int DemandVersion) _listKey;
         private int _listDrawVersion = -1, _listDemandVersion = -1;
         private bool _gridByCode;             // selection changed by RefreshSectorList, not by the user
 
+        // ROW REUSE. The grid's rows (_sectorRows) are slots: row i always shows the i-th sector of the sorted, filtered
+        // list, and when the order changes the slots keep their place and change what they show (a few texts). The data
+        // itself is one SectorRow per drawn sector in _sectorData, never bound. Moving rows instead made WPF prepare
+        // their containers again (about 200 ms per refresh when sorted by load at 1800x), and the view's live sorting
+        // re-placed each changed row on its own while the others still had the old window's values, so a red row
+        // could stay under a yellow one. Rows are only added or removed at the end, when the number of sectors changes
+        private readonly Dictionary<string, SectorRow> _sectorData = new Dictionary<string, SectorRow>(StringComparer.OrdinalIgnoreCase);
+        private string _selectedSector;       // the selection follows the sector, not the slot
+
         private void InitSectorList()
         {
             SectorGrid.ItemsSource = _sectorRows;
-            _sectorView = System.Windows.Data.CollectionViewSource.GetDefaultView(_sectorRows);
-            _sectorView.Filter = o =>
+            SectorGrid.SelectionChanged += (s, e) =>
             {
-                string q = SectorSearchBox.Text.Trim();
-                if (q.Length == 0) return true;
-                var r = (SectorRow)o;
-                return Contains(r.Sector, q) || Contains(r.Acc, q) || Contains(r.Configuration, q);
+                if (!_gridByCode)
+                    _selectedSector = (SectorGrid.SelectedItem as SectorRow)?.Sector;
             };
+            SectorGrid.SizeChanged += (s, e) => FitConfigColumn();
+        }
 
-            // Live sorting: a list sorted by a column (e.g. demand or load) re-sorts itself when the values change with the
-            // window, so the most demanded sector stays on top. Selection and scroll are kept
-            if (_sectorView is System.ComponentModel.ICollectionViewLiveShaping live && live.CanChangeLiveSorting)
+        // The last column (configuration) fills what the others leave, as a fixed width set here when the strip is resized.
+        // Measured at 1800x (30 s runs, alternated): with the columns exactly as wide as the list (a star width does that)
+        // and the horizontal scroll bar on Auto, the bar went on and off at each value change, and every refresh (4 times
+        // a second while playing) laid the grid out twice: 26 to 107 pauses over 50 ms in 30 s and up to 127 garbage
+        // collections. The horizontal scroll bar is now disabled (MainWindow.xaml) and this width fixed: 4 pauses, about
+        // 38 collections, as with the list hidden. The vertical scroll bar's width is always left free
+        // The panel that holds the grid's rows (found once, in the grid's template)
+        private VirtualizingStackPanel _rowPanel;
+
+        private VirtualizingStackPanel RowPanel()
+        {
+            if (_rowPanel != null)
+                return _rowPanel;
+            var todo = new Stack<DependencyObject>();
+            todo.Push(SectorGrid);
+            while (todo.Count > 0)
             {
-                foreach (string property in new[] { nameof(SectorRow.Sector), nameof(SectorRow.Acc), nameof(SectorRow.Configuration),
-                                                    nameof(SectorRow.Demand), nameof(SectorRow.CapacitySort), nameof(SectorRow.Load) })
-                    live.LiveSortingProperties.Add(property);
-                live.IsLiveSorting = true;
+                DependencyObject d = todo.Pop();
+                if (d is VirtualizingStackPanel panel)
+                    return _rowPanel = panel;
+                for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(d); i++)
+                    todo.Push(System.Windows.Media.VisualTreeHelper.GetChild(d, i));
             }
+            return null;
+        }
+
+        private void FitConfigColumn()
+        {
+            if (SectorGrid.Columns.Count == 0 || SectorGrid.ActualWidth <= 0)
+                return;
+            DataGridColumn config = SectorGrid.Columns[SectorGrid.Columns.Count - 1];
+            double others = SectorGrid.Columns.Take(SectorGrid.Columns.Count - 1).Sum(c => c.ActualWidth);
+            double width = Math.Max(40, Math.Floor(SectorGrid.ActualWidth - others - SystemParameters.VerticalScrollBarWidth - 2));
+            if (Math.Abs(config.ActualWidth - width) >= 1)
+                config.Width = new DataGridLength(width);
         }
 
         private static bool Contains(string text, string part) =>
             text != null && text.IndexOf(part, StringComparison.OrdinalIgnoreCase) >= 0;
+
+        // SORTING: a click on a header changes the order of the data (CompareRows), never the view's SortDescriptions
+        private string _sortKey = nameof(SectorRow.Sector);   // SortMemberPath of the sorted column (name when none)
+        private bool _sortDescending;
+
+        private void SectorGrid_Sorting(object sender, DataGridSortingEventArgs e)
+        {
+            e.Handled = true;   // the grid does not sort the view
+            DataGridColumn column = e.Column;
+            // First click lowest first, then it alternates (as the grid's own sorting)
+            var direction = column.SortDirection == System.ComponentModel.ListSortDirection.Ascending
+                ? System.ComponentModel.ListSortDirection.Descending : System.ComponentModel.ListSortDirection.Ascending;
+            foreach (DataGridColumn c in SectorGrid.Columns)
+                if (c != column) c.SortDirection = null;
+            column.SortDirection = direction;
+            _sortKey = column.SortMemberPath;
+            _sortDescending = direction == System.ComponentModel.ListSortDirection.Descending;
+            SyncSlots();
+        }
+
+        // Order of two rows for the sorted column; the sector name breaks ties, so the order is total and stable (rows
+        // with the same load do not swap at every refresh)
+        private int CompareRows(SectorRow a, SectorRow b)
+        {
+            int c;
+            switch (_sortKey)
+            {
+                case nameof(SectorRow.Load): c = a.Load.CompareTo(b.Load); break;
+                case nameof(SectorRow.Demand): c = a.Demand.CompareTo(b.Demand); break;
+                case nameof(SectorRow.CapacitySort): c = a.CapacitySort.CompareTo(b.CapacitySort); break;
+                case nameof(SectorRow.Acc): c = string.Compare(a.Acc, b.Acc, StringComparison.OrdinalIgnoreCase); break;
+                case nameof(SectorRow.Configuration): c = string.Compare(a.Configuration, b.Configuration, StringComparison.OrdinalIgnoreCase); break;
+                default: c = 0; break;
+            }
+            int byName = string.Compare(a.Sector, b.Sector, StringComparison.OrdinalIgnoreCase);
+            if (_sortKey == nameof(SectorRow.Sector))
+                return _sortDescending ? -byName : byName;
+            if (_sortDescending)
+                c = -c;
+            return c != 0 ? c : byName;
+        }
+
+        // Sorted and filtered data into the slots. A slot whose sector and values are the same says nothing, so a refresh
+        // where only some loads changed only redraws those cells
+        private void SyncSlots()
+        {
+            if (SectorGrid == null || SectorSearchBox == null)
+                return;   // text events while the window is being built
+            string q = SectorSearchBox.Text.Trim();
+            var shown = _sectorData.Values
+                .Where(r => q.Length == 0 || Contains(r.Sector, q) || Contains(r.Acc, q) || Contains(r.Configuration, q))
+                .ToList();
+            shown.Sort(CompareRows);
+
+            _gridByCode = true;
+            while (_sectorRows.Count > shown.Count)
+                _sectorRows.RemoveAt(_sectorRows.Count - 1);
+            if (_sectorRows.Count < shown.Count)
+            {
+                while (_sectorRows.Count < shown.Count)
+                    _sectorRows.Add(new SectorRow());
+                // Rows added (the first rows of a load, or sectors opening): the grid built a row for every item, not
+                // only the ones on screen (65 instead of about 21), and kept them, so each refresh laid out three times
+                // as many rows (17 to 20 pauses over 50 ms in 30 s at 1800x instead of 3 to 7). Measuring its row panel
+                // again, once the rows are in, makes it keep only the rows on screen
+                Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
+                {
+                    SectorGrid.InvalidateMeasure();
+                    RowPanel()?.InvalidateMeasure();
+                }));
+            }
+            SectorRow selected = null;
+            for (int i = 0; i < shown.Count; i++)
+            {
+                _sectorRows[i].ShowAs(shown[i], IsTicked(shown[i].Sector));
+                if (_selectedSector != null && string.Equals(shown[i].Sector, _selectedSector, StringComparison.OrdinalIgnoreCase))
+                    selected = _sectorRows[i];
+            }
+            // The selection stays on its sector (or comes back to it when it opens again)
+            if (SectorGrid.SelectedItem != selected)
+                SectorGrid.SelectedItem = selected;
+            _gridByCode = false;
+        }
 
         private void RefreshSectorList(DateTime time)
         {
@@ -716,30 +988,80 @@ namespace Projecte1_WPF_
             if (key == _listKey)
                 return;
             _listKey = key;
+            RefreshSectorRows(start, end);
+        }
 
+        private void RefreshSectorRows(DateTime start, DateTime end)
+        {
             if (_openSectors.DrawVersion != _listDrawVersion || _demandVersion != _listDemandVersion)
             {
-                // Other sectors drawn (or a new demand): new rows, the ticks and the selected row kept
-                string selected = (SectorGrid.SelectedItem as SectorRow)?.Sector;
-                _gridByCode = true;
-                _sectorRows.Clear();
-                foreach (var (acc, config, name) in _openSectors.DrawnSectors().OrderBy(x => x.Sector, StringComparer.OrdinalIgnoreCase))
-                    _sectorRows.Add(new SectorRow { Sector = name, Acc = acc, Configuration = config, Hourly = _demand.HourlyCapacity(name),
-                                                    IsChecked = IsTicked(name) });
-                SectorGrid.SelectedItem = _sectorRows.FirstOrDefault(r => string.Equals(r.Sector, selected, StringComparison.OrdinalIgnoreCase));
-                _gridByCode = false;
+                // Other sectors drawn (or a new demand): the sectors that closed go, the new ones come, the others stay
+                // (their configuration may have changed)
+                var drawn = new Dictionary<string, (string Acc, string Config)>(StringComparer.OrdinalIgnoreCase);
+                foreach (var (acc, config, name) in _openSectors.DrawnSectors())
+                    drawn[name] = (acc, config);
+                foreach (string name in _sectorData.Keys.ToList())
+                    if (!drawn.TryGetValue(name, out var now) || now.Acc != _sectorData[name].Acc)
+                        _sectorData.Remove(name);
+                foreach (var kv in drawn)
+                {
+                    if (_sectorData.TryGetValue(kv.Key, out SectorRow row))
+                        row.Configuration = kv.Value.Config;
+                    else
+                        _sectorData[kv.Key] = new SectorRow { Sector = kv.Key, Acc = kv.Value.Acc, Configuration = kv.Value.Config,
+                                                             Hourly = _demand.HourlyCapacity(kv.Key) };
+                }
                 _listDrawVersion = _openSectors.DrawVersion;
                 _listDemandVersion = _demandVersion;
             }
-            foreach (SectorRow row in _sectorRows)
+
+            // All the values first, then the order
+            foreach (SectorRow row in _sectorData.Values)
             {
                 int demand = _demand.Demand(row.Sector, start, end);
                 double? capacity = _demand.Capacity(row.Sector);
                 row.SetValues(demand, capacity, _demand.Status(demand, capacity));
             }
+            SyncSlots();
         }
 
-        private void SectorSearch_TextChanged(object sender, TextChangedEventArgs e) => _sectorView?.Refresh();
+        // The list follows the timeline at most LIST_INTERVAL apart (4 times a second): more is not readable and each
+        // refresh re-sorts and lays out the grid. The last time asked for is always shown, LIST_INTERVAL later at most
+        private static readonly TimeSpan LIST_INTERVAL = TimeSpan.FromMilliseconds(250);
+        private readonly Stopwatch _listClock = Stopwatch.StartNew();
+        private TimeSpan _listLastRefresh = TimeSpan.FromDays(-1);   // long ago (MinValue overflowed the subtraction)
+        private DateTime _listPendingTime;
+        private DispatcherTimer _listTimer;
+
+        private void ScheduleListRefresh(DateTime time)
+        {
+            _listPendingTime = time;
+            TimeSpan since = _listClock.Elapsed - _listLastRefresh;
+            if (since >= LIST_INTERVAL)
+            {
+                _listTimer?.Stop();
+                _listLastRefresh = _listClock.Elapsed;
+                RefreshSectorList(time);
+                return;
+            }
+            if (_listTimer == null)
+            {
+                _listTimer = new DispatcherTimer(DispatcherPriority.Background);
+                _listTimer.Tick += (s, e) =>
+                {
+                    _listTimer.Stop();
+                    _listLastRefresh = _listClock.Elapsed;
+                    RefreshSectorList(_listPendingTime);
+                };
+            }
+            if (!_listTimer.IsEnabled)
+            {
+                _listTimer.Interval = LIST_INTERVAL - since;
+                _listTimer.Start();
+            }
+        }
+
+        private void SectorSearch_TextChanged(object sender, TextChangedEventArgs e) => SyncSlots();
 
         // ------------------------------------------------------------------------------------------------
         // TICKS (checkbox column of the list): the ticked sectors are the only ones on the map, with their aircraft; none
@@ -778,20 +1100,62 @@ namespace Projecte1_WPF_
         private void ApplyTicks()
         {
             TickedText.Text = _ticked.Count == 0 ? "" : $"{_ticked.Count} shown";
+            UpdateMasterTick();
             if (_ticked.Count == 0)
             {
                 ShowOnlySectors(null);
                 CloseCompare();
                 return;
             }
-            ShowOnlySectors(_ticked.ToList());
-            if (_ticked.Count >= 2 && _focusSector == null)
+            if (_ticked.Count == 1)
+            {
+                // One sector ticked: its full panel, with the strip left open to tick more
+                CloseCompare();
+                SetFocus(_ticked[0], keepStrip: true);
+                ShowOnlySectors(_ticked.ToList());
+                return;
+            }
+            ShowOnlySectors(_ticked.ToList());   // ends any focus: two or more = the comparison
+            if (_focusSector == null)
                 _ = ShowCompareAsync();
             else
                 CloseCompare();
         }
 
-        private void CloseCompare() => ComparePanelView.Visibility = Visibility.Collapsed;
+        private void CloseCompare()
+        {
+            bool wasOpen = ComparePanelView.Visibility == Visibility.Visible;
+            ComparePanelView.Visibility = Visibility.Collapsed;
+            _comparePeriods = null;
+            if (wasOpen)
+            {
+                DrawOpenPeriods();
+                PanelClosed();
+            }
+        }
+
+        // CAMERA HOME. Whenever the right column ends up empty, however it happened (× or Esc of the sector panel or the
+        // comparison, unticking the last sector in the list, the master tick, Show all...), the camera flies back to the
+        // whole area. Checked once the action has settled (ContextIdle): a panel closing only to make room for another
+        // (the comparison coming back after a sector panel, or the panel of the one sector still ticked) stays where it is.
+        // Not while the data is being cleared for a new load, which frames the new area itself
+        private bool _homePending;
+        private bool _clearingData;
+
+        private void PanelClosed()
+        {
+            if (_homePending || _clearingData)
+                return;
+            _homePending = true;
+            Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
+            {
+                _homePending = false;
+                // A panel is still meant to be shown: a sector focused, or two or more ticked (comparison, maybe still
+                // being built in the background)
+                if (_simulation != null && _focusSector == null && _ticked.Count < 2)
+                    FrameArea();
+            }));
+        }
 
         private DateTime _compareFrom, _compareTo;
 
@@ -808,7 +1172,53 @@ namespace Projecte1_WPF_
             _compareTo = tl.Starts[tl.Starts.Count - 1] + tl.Step;
             ComparePanelView.SetSectors(names.Select(n => BuildCompareSector(n, tl)).ToList());
             ComparePanelView.Visibility = Visibility.Visible;
+            _comparePeriods = AllOpenPeriods(names, tl);
+            DrawOpenPeriods();
             UpdateCompareNow(_simTime);
+        }
+
+        // COMPARISON > Export: two CSVs in the format of the other exports (the user chose CSV so they work together):
+        // comparison_load.csv (one row per sliding step, one load % column per compared sector) and comparison_summary.csv
+        // (the sectors.csv columns for the compared sectors). Each starts with the parameter lines and the compared sectors
+        private async void ComparePanel_ExportRequested(object sender, EventArgs e)
+        {
+            if (_simulation == null || _ticked.Count < 2)
+                return;
+            if (_recomputing)
+            {
+                ShowNotice("The entries are being computed again: export when they are ready");
+                return;
+            }
+            List<string> names = _ticked.ToList();
+            if (!HaveExportFolder())
+                return;
+            ShowProgress($"Exporting the comparison of {names.Count} sectors...", null);
+            try
+            {
+                AirspaceTimeline tl = await TimelineAsync();
+                if (tl == null)
+                    throw new InvalidOperationException("the analysis could not be computed");
+                var parameters = ExportParameters(_simulation);
+                parameters.Insert(1, ("Compared sectors", string.Join(", ", names)));
+                // The sectors go in the file names, so two comparisons do not overwrite each other:
+                // comparison_load_LEBLF25_LECPGOX.csv (more than four: the first three and "_and_n_more")
+                string tag = names.Count <= 4 ? string.Join("_", names) : string.Join("_", names.Take(3)) + $"_and_{names.Count - 3}_more";
+                string loadFile = $"comparison_load_{tag}.csv", summaryFile = $"comparison_summary_{tag}.csv";
+                string load = System.IO.Path.Combine(ExportsFolder, loadFile);
+                string summary = System.IO.Path.Combine(ExportsFolder, summaryFile);
+                int rows = await Task.Run(() =>
+                {
+                    AnalysisExport.ComparisonSummary(tl, names, summary, parameters);
+                    return AnalysisExport.ComparisonLoad(tl, names, load, parameters);
+                });
+                HideProgress($"Saved the comparison of {string.Join(", ", names)}: {loadFile} ({rows:N0} rows) and {summaryFile} in {ExportsFolder}");
+                ShowNotice("Comparison exported (2 CSV files)");
+            }
+            catch (Exception ex) // async void: anything not caught here would close the app
+            {
+                HideProgress(ex is System.IO.IOException ? $"Could not export the comparison (is its file open in Excel?): {ex.Message}"
+                                                          : $"Could not export the comparison: {ex.Message}");
+            }
         }
 
         private CompareSector BuildCompareSector(string name, AirspaceTimeline tl)
@@ -886,15 +1296,30 @@ namespace Projecte1_WPF_
 
         private void ShowAll_Click(object sender, RoutedEventArgs e) => ShowAllSectors();
 
+        // Header of the tick column, a master checkbox (Gmail style): with something ticked, untick everything; the panel or
+        // comparison that was open closes, so the camera flies home like any panel closing. With nothing ticked it does
+        // nothing (ticking every sector would only open a huge comparison)
+        private void UntickAll_Click(object sender, RoutedEventArgs e)
+        {
+            if (_ticked.Count > 0)
+                ShowAllSectors();   // the panel or comparison closes and the camera flies home (PanelClosed)
+            UpdateMasterTick();   // the click toggled it: back to what the ticks say
+        }
+
+        // Empty with nothing ticked, a dash (indeterminate) with some ticked
+        private void UpdateMasterTick() => UntickAllBox.IsChecked = _ticked.Count == 0 ? false : (bool?)null;
+
         private void ShowAllSectors()
         {
             _gridByCode = true;
             SectorGrid.UnselectAll();
             _gridByCode = false;
+            _selectedSector = null;
             _ticked.Clear();
             foreach (SectorRow r in _sectorRows)
                 r.IsChecked = false;
             TickedText.Text = "";
+            UpdateMasterTick();
             CloseCompare();
             ShowOnlySectors(null);
         }
@@ -914,6 +1339,7 @@ namespace Projecte1_WPF_
         // One sector: selected in the list (scrolled into view), the only one on the map, and zoomed to
         private void SelectAndZoom(string name)
         {
+            _selectedSector = name;
             _gridByCode = true;
             SectorRow row = _sectorRows.FirstOrDefault(r => string.Equals(r.Sector, name, StringComparison.OrdinalIgnoreCase));
             SectorGrid.SelectedItem = row;
@@ -967,6 +1393,22 @@ namespace Projecte1_WPF_
             catch (Exception ex) { Debug.WriteLine("[Map_DoubleTapped] " + ex.Message); }
         }
 
+        // Space plays / pauses only when the simulation is ready and idle: data loaded, timeline shown, no load or recompute
+        // running, no pop-up open, no modifier, not a held key. When the focus is somewhere that uses Space itself (a text
+        // box, a button, a tick box, a menu) it keeps doing that; a focused Play button toggles play by itself anyway
+        private bool SpaceTogglesPlay(System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.IsRepeat || System.Windows.Input.Keyboard.Modifiers != System.Windows.Input.ModifierKeys.None)
+                return false;
+            if (_simulation == null || TimelineBar.Visibility != Visibility.Visible || _recomputing || !DefaultDataItem.IsEnabled)
+                return false;
+            if (ParamsPopup.IsOpen || FilterPopup.IsOpen || SpeedMenu.IsOpen)
+                return false;
+            object focused = System.Windows.Input.Keyboard.FocusedElement;
+            return !(focused is System.Windows.Controls.Primitives.TextBoxBase || focused is PasswordBox
+                     || focused is System.Windows.Controls.Primitives.ButtonBase || focused is MenuItem || focused is ComboBox);
+        }
+
         // F11: full screen on / off. Esc: close the parameters pop-up, otherwise the sector panel, otherwise show all the
         // sectors again, otherwise leave full screen
         private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -977,6 +1419,15 @@ namespace Projecte1_WPF_
                 e.Handled = true;
                 return;
             }
+            if (e.Key == System.Windows.Input.Key.Space)
+            {
+                if (SpaceTogglesPlay(e))
+                {
+                    PlayBTN_Click(PlayBTN, new RoutedEventArgs());
+                    e.Handled = true;
+                }
+                return;
+            }
             if (e.Key != System.Windows.Input.Key.Escape)
                 return;
             if (ParamsPopup.IsOpen)
@@ -984,12 +1435,7 @@ namespace Projecte1_WPF_
             else if (_focusSector != null)
                 SectorPanel_CloseRequested(this, EventArgs.Empty);
             else if (_openSectors.Only != null)
-            {
-                bool comparing = ComparePanelView.Visibility == Visibility.Visible;
-                ShowAllSectors();
-                if (comparing)
-                    FrameArea();   // closing the comparison flies home, like closing the sector panel
-            }
+                ShowAllSectors();   // a comparison open closes and the camera flies home (PanelClosed)
             else if (_fullScreen)
                 SetFullScreen(false);
         }
@@ -1092,8 +1538,9 @@ namespace Projecte1_WPF_
         private Dictionary<long, Trajectory> _flightsById = new Dictionary<long, Trajectory>(); // relevant flights (aircraft inside)
         private bool _stripWasShown;                  // the strip's state before the panel replaced it
 
-        // name = null ends the focus (panel closed, strip back); the caller chooses what the map shows
-        private void SetFocus(string name)
+        // name = null ends the focus (panel closed, strip back); the caller chooses what the map shows. keepStrip: the
+        // strip stays open beside the panel (a sector ticked in the list, so the user can go on ticking)
+        private void SetFocus(string name, bool keepStrip = false)
         {
             if (string.Equals(name, _focusSector, StringComparison.OrdinalIgnoreCase))
                 return;
@@ -1122,19 +1569,23 @@ namespace Projecte1_WPF_
             {
                 CloseCompare();   // the full panel takes the column; the comparison comes back when it closes
                 if (!wasFocused)
-                    OpenSectorPanel();
+                    OpenSectorPanel(keepStrip);
                 _ = FillSectorPanelAsync();
             }
             else if (wasFocused)
                 CloseSectorPanel();
         }
 
-        // The panel slides in from the right; the strip goes away (remembering whether it was shown or collapsed)
-        private void OpenSectorPanel()
+        // The panel slides in from the right. The strip folds to its narrow "Map »" button, which opens it again beside the
+        // panel (unless keepStrip); its state before is restored when the panel closes
+        private void OpenSectorPanel(bool keepStrip)
         {
             _stripWasShown = ParamPanel.Visibility == Visibility.Visible;
-            ParamPanel.Visibility = Visibility.Collapsed;
-            ParamShowBTN.Visibility = Visibility.Collapsed;
+            if (!keepStrip)
+            {
+                ParamPanel.Visibility = Visibility.Collapsed;
+                ParamShowBTN.Visibility = Visibility.Visible;
+            }
             SectorInfoPanel.Visibility = Visibility.Visible;
             var slide = new System.Windows.Media.Animation.DoubleAnimation(SectorInfoPanel.Width, 0, TimeSpan.FromMilliseconds(220))
             {
@@ -1150,25 +1601,37 @@ namespace Projecte1_WPF_
             SectorInfoPanel.Visibility = Visibility.Collapsed;
             ParamPanel.Visibility = _stripWasShown ? Visibility.Visible : Visibility.Collapsed;
             ParamShowBTN.Visibility = _stripWasShown ? Visibility.Collapsed : Visibility.Visible;
+            PanelClosed();
         }
 
-        // × of the panel (or Esc): all the sectors again, the whole list, the home view
+        // × of the panel (or Esc): all the sectors again, the whole list, the home view (PanelClosed)
         private void SectorPanel_CloseRequested(object sender, EventArgs e)
         {
             SectorSearchBox.Text = "";
-            if (_ticked.Count > 0)
+            if (_ticked.Count >= 2)
             {
-                // Opened from the comparison (or with ticks): back to the ticked sectors and their comparison
+                // Opened from the comparison: back to the ticked sectors and their comparison, home view as before
                 SetFocus(null);
                 ApplyTicks();
+                FrameArea();
             }
             else
                 ShowAllSectors();
-            FrameArea();
         }
 
         // Click on the panel chart or the analysis window: the timeline goes there (paused)
         private void GoToTime(DateTime t)
+        {
+            if (_simulation == null || TimelineBar.Visibility != Visibility.Visible)
+                return;
+            if (t < _simulation.Start) t = _simulation.Start;
+            if (t > _simulation.End) t = _simulation.End;
+            SetPlaying(false);
+            RequestTime(t);
+        }
+
+        // The same jump done at once, for a caller that looks at the map right after (e.g. is the sector open then?)
+        private void GoToTimeNow(DateTime t)
         {
             if (_simulation == null || TimelineBar.Visibility != Visibility.Visible)
                 return;
@@ -1282,6 +1745,13 @@ namespace Projecte1_WPF_
         {
             SectorInfo info = SectorInfoPanel.Info;
             if (info == null || _simulation == null)
+                return;
+            if (_recomputing)
+            {
+                ShowNotice("The entries are being computed again: export when they are ready");
+                return;
+            }
+            if (!HaveExportFolder())
                 return;
             ShowProgress($"Exporting {info.Name} to Excel...", null);
             try
@@ -1519,11 +1989,40 @@ namespace Projecte1_WPF_
         // Half the width of the slider thumb: the track (and the thumb centre) runs this far inside the slider
         private const double SLIDER_END_PX = 7;
 
-        // Green band under the track for each open period of the focused sector, a dark tick at each opening and closing
+        // Periods marked on the time bar: the focused sector's open periods, or, while comparing, the periods when all the
+        // compared sectors are open at once (null = no marks)
+        private List<(DateTime Start, DateTime End)> _comparePeriods;
+        private List<(DateTime Start, DateTime End)> MarkedPeriods => _focusPeriods ?? (ComparePanelView.Visibility == Visibility.Visible ? _comparePeriods : null);
+
+        // Intersection of the open periods of every compared sector, within the simulation
+        private List<(DateTime Start, DateTime End)> AllOpenPeriods(IList<string> names, AirspaceTimeline tl)
+        {
+            List<(DateTime Start, DateTime End)> all = null;
+            foreach (string name in names)
+            {
+                int row = tl.RowOf(name);
+                if (row < 0)
+                    return new List<(DateTime, DateTime)>();   // never open in the simulation: never all open
+                var mine = OpenPeriods(tl.SectorAcc[row], name);
+                if (all == null) { all = mine; continue; }
+                var both = new List<(DateTime Start, DateTime End)>();
+                foreach (var a in all)
+                    foreach (var b in mine)
+                    {
+                        DateTime s = a.Start > b.Start ? a.Start : b.Start, e = a.End < b.End ? a.End : b.End;
+                        if (e > s) both.Add((s, e));
+                    }
+                all = both.OrderBy(p => p.Start).ToList();
+            }
+            return (all ?? new List<(DateTime, DateTime)>()).Where(p => p.End > _simulation.Start && p.Start < _simulation.End).ToList();
+        }
+
+        // Green band under the track for each marked period (MarkedPeriods), a dark tick at each opening and closing
         private void DrawOpenPeriods()
         {
             OpenPeriodMarks.Children.Clear();
-            if (_focusPeriods == null || _simulation == null)
+            var periods = MarkedPeriods;
+            if (periods == null || _simulation == null)
                 return;
             double total = (_simulation.End - _simulation.Start).TotalSeconds;
             double width = OpenPeriodMarks.ActualWidth - 2 * SLIDER_END_PX, height = OpenPeriodMarks.ActualHeight;
@@ -1537,9 +2036,9 @@ namespace Projecte1_WPF_
                 Canvas.SetTop(r, y);
                 OpenPeriodMarks.Children.Add(r);
             }
-            var band = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x2E, 0xA0, 0x43));
-            var tick = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x1B, 0x5E, 0x20));
-            foreach (var (start, end) in _focusPeriods)
+            var band = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x1F, 0x6E, 0x6B));
+            var tick = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x0E, 0x3B, 0x39));
+            foreach (var (start, end) in periods)
             {
                 if (end <= _simulation.Start || start >= _simulation.End)
                     continue;
@@ -1555,12 +2054,18 @@ namespace Projecte1_WPF_
 
         private void OpenPeriodMarks_SizeChanged(object sender, SizeChangedEventArgs e) => DrawOpenPeriods();
 
-        // Closing time of the focused sector in (from, to], if playback passes it
+        // End of a marked period in (from, to], if playback passes it: the focused sector closes, or one of the compared
+        // sectors does
+        // The pause at a closing stops this long before it, while the sector is still open (see Timer_Tick)
+        private static readonly TimeSpan PAUSE_BEFORE_CLOSING = TimeSpan.FromSeconds(1);
+        private DateTime? _pausedBeforeClosing;   // the closing playback last paused before: Play goes through it
+
         private DateTime? FocusClosesBetween(DateTime from, DateTime to)
         {
-            if (_focusPeriods == null)
+            var periods = MarkedPeriods;
+            if (periods == null)
                 return null;
-            foreach (var (_, end) in _focusPeriods)
+            foreach (var (_, end) in periods)
                 if (end > from && end <= to)
                     return end;
             return null;
@@ -1621,7 +2126,7 @@ namespace Projecte1_WPF_
             if (_simulation == null || _program.Area == null)
             {
                 SectorsLayerBTN.IsChecked = true;
-                StatusText.Text = "Load the data first: the traffic density is computed from the simulation.";
+                ShowNotice("Load the data first: the traffic density is computed from the simulation.");
                 return;
             }
             int version = ++_densityVersion;
@@ -1742,8 +2247,8 @@ namespace Projecte1_WPF_
         private void Analysis_JumpRequested(DateTime time, string sector)
         {
             if (TimelineBar.Visibility != Visibility.Visible)
-                StartSimulation_Click(this, null);
-            GoToTime(time);
+                ShowTimeline();
+            GoToTimeNow(time);
             if (sector != null && _openSectors.IsDrawn(sector))
                 SelectAndZoom(sector);
             Activate();
@@ -1772,6 +2277,64 @@ namespace Projecte1_WPF_
             PlayIcon.Margin = new Thickness(playing || atEnd ? 0 : 2, 0, 0, 0); // the play triangle looks centred a bit to the right
             System.Windows.Automation.AutomationProperties.SetName(PlayBTN, playing ? "Pause" : atEnd ? "Replay" : "Play");
             _lastReal = _clock.Elapsed.TotalSeconds;
+
+            // While playing, the time advances once per screen frame (see Frame_Rendering); paused, the 50 ms timer is enough
+            System.Windows.Media.CompositionTarget.Rendering -= Frame_Rendering;
+            if (playing)
+                System.Windows.Media.CompositionTarget.Rendering += Frame_Rendering;
+            // Fewer long garbage-collection stops while the map is moving
+            System.Runtime.GCSettings.LatencyMode = playing ? System.Runtime.GCLatencyMode.SustainedLowLatency
+                                                            : System.Runtime.GCLatencyMode.Interactive;
+            SetFullSpeed(playing);
+        }
+
+        // POWER THROTTLING. On battery, Windows 11 slows down a window that is not in focus (another window clicked, the
+        // map watched beside another program) or covered: playback at 1800x fell from about 33 to 8 updates a second.
+        // While playing, the process asks to run at full speed (high quality of service); paused, Windows decides again
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct PowerThrottlingState { public uint Version, ControlMask, StateMask; }
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetProcessInformation(IntPtr process, int infoClass, ref PowerThrottlingState info, int size);
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        private static extern IntPtr GetCurrentProcess();
+
+        private const int PROCESS_POWER_THROTTLING = 4;              // ProcessPowerThrottling
+        private const uint POWER_THROTTLING_EXECUTION_SPEED = 1;
+
+        private static void SetFullSpeed(bool on)
+        {
+            try
+            {
+                // Control the execution speed with the state off = never throttled; no control = the system's heuristics
+                var state = new PowerThrottlingState { Version = 1, ControlMask = on ? POWER_THROTTLING_EXECUTION_SPEED : 0, StateMask = 0 };
+                SetProcessInformation(GetCurrentProcess(), PROCESS_POWER_THROTTLING, ref state,
+                                      System.Runtime.InteropServices.Marshal.SizeOf<PowerThrottlingState>());
+            }
+            catch (Exception ex) { Debug.WriteLine("[SetFullSpeed] " + ex.Message); }   // older Windows: nothing to do
+        }
+
+        // PLAYBACK CLOCK. The 50 ms timer gave about 16 updates a second (Windows rounds it to 62 ms), which looks jerky
+        // at high speeds: at 1800x each update moved the aircraft two simulated minutes. Playing, the time advances at
+        // every frame WPF draws (the screen's rate) instead. Frames run before mouse and keyboard input, so an update
+        // waits at least as long as the previous one took: the window always has half of the time for everything else
+        private TimeSpan _lastFrame;
+        private double _nextAdvance;   // _clock seconds before which no update runs
+
+        private void Frame_Rendering(object sender, EventArgs e)
+        {
+            // The event can come more than once for the same frame
+            TimeSpan frame = ((System.Windows.Media.RenderingEventArgs)e).RenderingTime;
+            if (frame == _lastFrame || !_playing || _simulation == null)
+                return;
+            _lastFrame = frame;
+            double start = _clock.Elapsed.TotalSeconds;
+            if (start < _nextAdvance)
+                return;
+            Advance();
+            double end = _clock.Elapsed.TotalSeconds;
+            _nextAdvance = end + (end - start);
         }
 
         private void PlayBTN_Click(object sender, RoutedEventArgs e)
@@ -1804,14 +2367,42 @@ namespace Projecte1_WPF_
         {
             if (_sliderByCode || _simulation == null)
                 return;
-            SetTime(_simulation.Start.AddSeconds(e.NewValue), continuous: false);
+            RequestTime(_simulation.Start.AddSeconds(e.NewValue));
+        }
+
+        // A jump asked for by the time bar or a chart drag. The mouse moves much more often than the map can be redrawn,
+        // and running every move made them queue up (the bar lagged behind the mouse and then caught up in jerks). Here
+        // the moves are merged: one update runs once input and drawing are done, with the latest time asked for
+        private DateTime _requestedTime;
+        private bool _timeRequestPending;
+
+        private void RequestTime(DateTime t)
+        {
+            _requestedTime = t;
+            if (_timeRequestPending)
+                return;
+            _timeRequestPending = true;
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                _timeRequestPending = false;
+                if (_simulation != null)
+                    SetTime(_requestedTime, continuous: false);
+            }));
         }
 
         // Runs always (also paused) so markers disappear after MARKER_LIFE of real time; moves the time only when playing
         private void Timer_Tick(object sender, EventArgs e)
         {
+            if (!_playing)
+                Advance();   // paused: only the markers expire. Playing, Frame_Rendering advances the time
+        }
+
+        private void Advance()
+        {
             double now = _clock.Elapsed.TotalSeconds;
-            double realSeconds = now - _lastReal;
+            // At most a quarter of a second per update: frames stop while the window is minimised, and the time would
+            // otherwise jump by the whole pause when it comes back
+            double realSeconds = Math.Min(now - _lastReal, 0.25);
             _lastReal = now;
 
             if (_playing)
@@ -1822,17 +2413,37 @@ namespace Projecte1_WPF_
                     next = _simulation.End;
 
                 // The sector of the panel closes: pause there (default), or keep playing with all the sectors on the map
-                // until it opens again (FollowFocusOnMap). The panel stays either way
+                // until it opens again (FollowFocusOnMap). The panel stays either way.
+                // The pause is PAUSE_BEFORE_CLOSING before the closing: at the closing time itself the sector already counts
+                // as closed, so the map showed all the sectors and the camera flew home, the opposite of what the pause
+                // is for. The closing paused at is remembered, so Play then goes through it instead of pausing again
                 DateTime? closes = FocusClosesBetween(_simTime, next);
+                bool passing = closes != null && closes == _pausedBeforeClosing;
                 if (closes != null)
+                    _pausedBeforeClosing = null;
+                DateTime pauseAt = closes == null ? next : Max(_simTime, closes.Value - PAUSE_BEFORE_CLOSING);
+                if (closes != null && _focusSector == null)
+                {
+                    // Comparing: one of the compared sectors closes, so they are no longer all open
+                    if (ComparePanelView.PauseOnClose && !passing)
+                    {
+                        SetTime(pauseAt, continuous: true);
+                        SetPlaying(false);
+                        _pausedBeforeClosing = closes;
+                        ShowNotice($"One of the compared sectors closes at {closes.Value:HH:mm} UTC · paused");
+                        return;
+                    }
+                    ShowNotice($"Not all the compared sectors are open from {closes.Value:HH:mm} UTC");
+                }
+                else if (closes != null)
                 {
                     string name = _focusSector;
-                    if (SectorInfoPanel.PauseOnClose)
+                    if (SectorInfoPanel.PauseOnClose && !passing)
                     {
-                        SetTime(closes.Value, continuous: true);
+                        SetTime(pauseAt, continuous: true);
                         SetPlaying(false);
-                        ShowNotice($"{name} closed at {closes.Value:HH:mm} UTC · paused");
-                        StatusText.Text = $"{name} closed at {closes.Value:dd/MM HH:mm} UTC; paused. Play continues with all the sectors; × closes the sector panel.";
+                        _pausedBeforeClosing = closes;
+                        ShowNotice($"{name} closes at {closes.Value:HH:mm} UTC · paused");
                         return;
                     }
                     ShowNotice($"{name} closed at {closes.Value:HH:mm} UTC · showing all sectors");
@@ -1845,8 +2456,8 @@ namespace Projecte1_WPF_
                     // Tell the user why it stopped and where the results are
                     SetPlaying(false);
                     int entries = _program.Entries.Count(x => x.Level == EntryLevel.Open);
-                    StatusText.Text = $"Simulation finished at {_simulation.End:dd/MM HH:mm} UTC: {_simulation.FlightCount:N0} flights, " +
-                                      $"{entries:N0} sector entries. Results > Export entries saves them.";
+                    ShowNotice($"Simulation finished at {_simulation.End:dd/MM HH:mm} UTC: {_simulation.FlightCount:N0} flights, " +
+                               $"{entries:N0} sector entries. Results > Export entries saves them.");
                 }
             }
             _aircraft.RemoveExpiredMarkers();
@@ -1866,12 +2477,19 @@ namespace Projecte1_WPF_
             IReadOnlyCollection<string> only = _openSectors.Only;
             bool Selected(IEnumerable<string> sectors) => only == null || sectors.Any(s => only.Contains(s));
             if (continuous && time > _simTime)
-                _aircraft.AddMarkers(_simulation.EventsBetween(_simTime, time).Where(ev => Shown(ev.FL) && Selected(new[] { ev.Sector })).ToList(), MARKER_LIFE);
+                _aircraft.AddMarkers(_simulation.EventsBetween(_simTime, time).Where(ev => Shown(ev.FL) && Selected(new[] { ev.Sector })).ToList(), MarkerLife());
             else if (!continuous)
                 _aircraft.ClearMarkers();
+            // A jump to another time: the closing playback paused before no longer counts as "already paused at", so
+            // playing through it again pauses again. Not when the time is the same (a redraw while paused there)
+            if (!continuous && time != _simTime)
+                _pausedBeforeClosing = null;
             _simTime = time;
 
-            RecolorSectors(time);
+            // Map colours at every update; the sector list at most 4 times a second (ScheduleListRefresh)
+            var (ws, we) = _demand.WindowAt(time);
+            _openSectors.Recolor(name => _demand.Status(_demand.Demand(name, ws, we), _demand.Capacity(name)));
+            ScheduleListRefresh(time);
             if (_focusSector != null && SectorInfoPanel.Visibility == Visibility.Visible)
                 SectorInfoPanel.SetNow(SectorNowAt(time));
             if (ComparePanelView.Visibility == Visibility.Visible)
@@ -1965,11 +2583,18 @@ namespace Projecte1_WPF_
 
         private void ApplyParameters_Click(object sender, RoutedEventArgs e)
         {
+            // Also reached with Enter, which does not care that the Apply button is disabled: while the entries are being
+            // computed (load, Recompute) the parameters must not change, the computation reads them flight by flight
+            if (!ApplyParamBTN.IsEnabled)
+            {
+                ParamMessage.Text = "Wait until the entries are computed, then apply.";
+                return;
+            }
             RecomputeRow.Visibility = Visibility.Collapsed;
-            if (!ReadParameter(MinTimeBox, "Minimum time in sector", 0, out double minTime) ||
-                !ReadParameter(ReentryBox, "Reentry time", 0, out double reentry) ||
-                !ReadParameter(WindowBox, "Integration window", 1, out double window) ||
-                !ReadParameter(StepBox, "Sliding step", 1, out double step))
+            if (!ReadParameter(MinTimeBox, "Minimum time in sector", 0, MAX_SECONDS, "s", out double minTime) ||
+                !ReadParameter(ReentryBox, "Reentry time", 0, MAX_SECONDS, "s", out double reentry) ||
+                !ReadParameter(WindowBox, "Integration window", 1, MAX_MINUTES, "min", out double window) ||
+                !ReadParameter(StepBox, "Sliding step", 1, MAX_MINUTES, "min", out double step))
                 return;
             if (step > window)
             {
@@ -2013,13 +2638,17 @@ namespace Projecte1_WPF_
             ParamMessage.Text = messages.Count > 0 ? string.Join(" ", messages) : "Nothing changed.";
         }
 
-        // Number >= min in the box, or a message in the panel
-        private bool ReadParameter(TextBox box, string name, double min, out double value)
+        // Upper limits of the parameters: one hour (the capacities of the file are per hour). Without them a huge number (1e400 reads as infinity) was stored and
+        // then failed every time the demand was rebuilt
+        private const double MAX_SECONDS = 3600, MAX_MINUTES = 60;
+
+        // Number between min and max in the box, or a message in the panel
+        private bool ReadParameter(TextBox box, string name, double min, double max, string unit, out double value)
         {
             string text = box.Text.Trim().Replace(',', '.');
-            if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && value >= min)
+            if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && value >= min && value <= max)
                 return true;
-            ParamMessage.Text = $"{name}: write a number of at least {min}.";
+            ParamMessage.Text = $"{name}: write a number between {min} and {max:0} {unit}.";
             box.Focus();
             return false;
         }
@@ -2037,7 +2666,10 @@ namespace Projecte1_WPF_
         {
             RecomputeRow.Visibility = Visibility.Collapsed;
             SetPlaying(false);
-            ApplyParamBTN.IsEnabled = StartSimBTN.IsEnabled = ExportEntriesItem.IsEnabled = false;
+            // No export meanwhile: its parameter lines would give the new times with the data of the old entries
+            ApplyParamBTN.IsEnabled = ExportEntriesItem.IsEnabled = ResultsBar.IsEnabled = false;
+            DefaultDataItem.IsEnabled = OwnFilesItem.IsEnabled = false; // no other data set while this one is being computed
+            _recomputing = true;
             ParamMessage.Text = "Computing the entries again...";
             try
             {
@@ -2064,8 +2696,48 @@ namespace Projecte1_WPF_
             }
             finally
             {
-                ApplyParamBTN.IsEnabled = StartSimBTN.IsEnabled = ExportEntriesItem.IsEnabled = true;
+                ApplyParamBTN.IsEnabled = ExportEntriesItem.IsEnabled = ResultsBar.IsEnabled = true;
+                DefaultDataItem.IsEnabled = OwnFilesItem.IsEnabled = true;
+                _recomputing = false;
             }
+        }
+
+        // Entries being computed again (Recompute entries): the exports of the panels wait, like the Results menu
+        private bool _recomputing;
+
+        // ------------------------------------------------------------------------------------------------
+        // WIDTH of the side panels by dragging their inner edge (StripGrip, PanelGrip, CompareGrip). Not narrower than the
+        // design width (everything fits there) and not wider than the content can use: the strip only gains room for the
+        // configuration name (last column), the right panel for its charts. The map always keeps MAP_MIN px.
+        // The timeline bar follows by itself (it fills what the strip leaves)
+        // ------------------------------------------------------------------------------------------------
+        private const double STRIP_MIN = 390, STRIP_MAX = 480, PANEL_MIN = 340, PANEL_MAX = 640, MAP_MIN = 320;
+
+        private double RightPanelWidth =>
+            SectorInfoPanel.Visibility == Visibility.Visible || ComparePanelView.Visibility == Visibility.Visible ? SectorInfoPanel.Width : 0;
+
+        private void StripGrip_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+        {
+            double room = RootGrid.ActualWidth - RightPanelWidth - MAP_MIN;
+            ParamPanel.Width = Math.Max(STRIP_MIN, Math.Min(Math.Min(STRIP_MAX, room), ParamPanel.Width + e.HorizontalChange));
+        }
+
+        private void StripGrip_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e) => ParamPanel.Width = STRIP_MIN;
+
+        // Sector panel and comparison share the column and the width
+        private void PanelGrip_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+        {
+            double strip = ParamPanel.Visibility == Visibility.Visible ? ParamPanel.Width : ParamShowBTN.ActualWidth;
+            double room = RootGrid.ActualWidth - strip - MAP_MIN;
+            SetRightPanelWidth(Math.Max(PANEL_MIN, Math.Min(Math.Min(PANEL_MAX, room), SectorInfoPanel.Width - e.HorizontalChange)));
+        }
+
+        private void PanelGrip_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e) => SetRightPanelWidth(PANEL_MIN);
+
+        private void SetRightPanelWidth(double width)
+        {
+            SectorInfoPanel.Width = width;
+            ComparePanelView.Width = width;
         }
     }
 }

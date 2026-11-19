@@ -10,6 +10,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <!-- The app's logo (one sector, the route entering it, the aircraft inside): icon of the .exe and so of its shortcuts -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,6 +26,16 @@
 	    <None Update="Archives\**">
 		    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	    </None>
+    </ItemGroup>
+    <!-- Archivo (SIL Open Font License, Fonts\OFL.txt): the UI font, embedded so it does not need installing -->
+    <ItemGroup>
+	    <Resource Include="Fonts\*.ttf" />
+	    <None Include="Fonts\OFL.txt" />
+    </ItemGroup>
+    <!-- Window icon (taskbar, Alt+Tab) and the title bar image -->
+    <ItemGroup>
+	    <Resource Include="Assets\app.ico" />
+	    <Resource Include="Assets\logo-256.png" />
     </ItemGroup>
 
 </Project>

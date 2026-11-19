@@ -15,8 +15,11 @@ namespace Projecte1_WPF_.ReadData
 
         // accs: if not null, only the lines of those ACCs are read (null = all the ACCs).
         // Throws DataFileException (file, line, what is wrong) on the first line that does not follow the format
-        public ConfigurationList Read(string filePath, List<ElementarySector> elementary, List<Airspace> collapsed, HashSet<string> accs = null)
+        // skipped: if not null (skip mode), a configuration with a bad line is left out whole and noted there
+        public ConfigurationList Read(string filePath, List<ElementarySector> elementary, List<Airspace> collapsed, HashSet<string> accs = null,
+                                      List<string> skipped = null)
         {
+            var badKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (!File.Exists(filePath))
                 throw new DataFileException(filePath, "the file does not exist");
 
@@ -43,12 +46,30 @@ namespace Projecte1_WPF_.ReadData
                     continue;
 
                 var p = new LineParser(filePath, lineNumber, rawLine);
-                var parts = p.Fields(';', 3, FORMAT);
-                string accName = parts[0].Trim();
-                string configName = parts[1].Trim();
-                string sectorName = parts[2].Trim();
-                if (accName.Length == 0 || configName.Length == 0 || sectorName.Length == 0)
-                    throw p.Error($"the ACC, the configuration and the sector cannot be empty: expected {FORMAT}");
+                string accName, configName, sectorName;
+                try
+                {
+                    var parts = p.Fields(';', 3, FORMAT);
+                    accName = parts[0].Trim();
+                    configName = parts[1].Trim();
+                    sectorName = parts[2].Trim();
+                    if (accName.Length == 0 || configName.Length == 0 || sectorName.Length == 0)
+                        throw p.Error($"the ACC, the configuration and the sector cannot be empty: expected {FORMAT}");
+                }
+                catch (DataFileException ex) when (skipped != null)
+                {
+                    // The whole configuration goes (one sector less would be another airspace), when the line still says
+                    // which one it is; otherwise only the line
+                    string[] raw = line.Split(';');
+                    if (raw.Length >= 2 && raw[0].Trim().Length > 0 && raw[1].Trim().Length > 0)
+                    {
+                        badKeys.Add(raw[0].Trim() + ";" + raw[1].Trim());
+                        Skips.Add(skipped, ex, $"configuration {raw[1].Trim()} of {raw[0].Trim()} skipped");
+                    }
+                    else
+                        Skips.Add(skipped, ex, "line skipped");
+                    continue;
+                }
                 found++;
 
                 if (accs != null && !accs.Contains(accName))
@@ -74,8 +95,12 @@ namespace Projecte1_WPF_.ReadData
                 }
             }
 
+            result.Configurations.RemoveAll(c => badKeys.Contains(c.AccName + ";" + c.ConfigurationName));
+
             if (found == 0)
                 throw new DataFileException(filePath, $"no configuration line found: expected lines {FORMAT}");
+            if (result.Configurations.Count == 0 && accs == null)
+                throw new DataFileException(filePath, "no configuration left after skipping the bad ones");
             return result;
         }
     }

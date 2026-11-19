@@ -7,21 +7,140 @@
         xmlns:local="clr-namespace:Projecte1_WPF_"
         mc:Ignorable="d"
         Title="Projecte P1 - Trajectory entries and sector demand" Height="800" Width="1280" WindowStartupLocation="CenterScreen"
-        StateChanged="Window_StateChanged">
+        StateChanged="Window_StateChanged" Icon="pack://application:,,,/Assets/app.ico"
+        FontFamily="pack://application:,,,/Fonts/#Archivo" Foreground="#FF1F2A30" Background="#FFF7F8F7">
     <!-- No Windows title bar: the app's own bar (TitleBar) is the caption. The window keeps its resize border, its snap
          and Aero shake; GlassFrameThickness 0,0,0,1 keeps the system shadow -->
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="36" ResizeBorderThickness="6" GlassFrameThickness="0,0,0,1" CornerRadius="0" UseAeroCaptionButtons="False" />
     </WindowChrome.WindowChrome>
     <Window.Resources>
+        <!-- LOOK (the en-route sketch B2, chosen by the user): Archivo (embedded, Fonts/), Archivo Condensed for names and
+             figures; graphite text #1F2A30, secondary #5E6A70, one teal accent #1F6E6B for what can be clicked or marks the
+             time, light neutral surfaces #F7F8F7 separated by hairlines #E1E5E3, no framed boxes. Status colours only for load -->
+        <FontFamily x:Key="UiFont">pack://application:,,,/Fonts/#Archivo</FontFamily>
+        <FontFamily x:Key="UiCondensed">pack://application:,,,/Fonts/#Archivo Condensed</FontFamily>
+        <!-- Menus, their drop-downs and the speed menu use the system menu font unless told -->
+        <Style TargetType="Menu">
+            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#FF1F2A30" />
+        </Style>
+        <Style TargetType="ContextMenu">
+            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        </Style>
+        <!-- Small flat button (no frame, light tint under the mouse): the strip's « and Show all -->
+        <!-- Tick boxes of the sector grid (rows and the header's master box, Gmail style): empty box; ticked = teal with a
+             white check; some ticked (header, indeterminate) = teal with a white dash -->
+        <Style x:Key="TickBox" TargetType="CheckBox">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="Box" Width="14" Height="14" CornerRadius="3" Background="White" BorderBrush="#FF98A2A6" BorderThickness="1.2">
+                            <Grid>
+                                <Path x:Name="Check" Data="M2.6,7 L5.4,9.8 L11,3.8" Stroke="White" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Visibility="Collapsed" />
+                                <Rectangle x:Name="Dash" Width="7" Height="1.8" RadiusX="0.9" RadiusY="0.9" Fill="White" Visibility="Collapsed" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="#FF1F6E6B" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="#FF1F6E6B" />
+                                <Setter TargetName="Check" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="{x:Null}">
+                                <Setter TargetName="Box" Property="Background" Value="#FF1F6E6B" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="#FF1F6E6B" />
+                                <Setter TargetName="Dash" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="#FF1F6E6B" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="#FF0E3B39" />
+                                <Setter TargetName="Box" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="FlatButton" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="#FF1F6E6B" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}" BorderBrush="Transparent" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#FFE4E9E7" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#FFD5DCD9" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bg" Property="BorderBrush" Value="#FF0E3B39" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- On/off switch with its label on the right (teal track, knob on the right = on), the same as in the sector panel.
+             For CheckBoxes and ToggleButtons: the strip's line options use it instead of plain checkboxes -->
+        <Style x:Key="Switch" TargetType="ToggleButton">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#FF1F2A30" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <StackPanel Orientation="Horizontal" Background="Transparent">
+                            <Border x:Name="Track" Width="30" Height="17" CornerRadius="8.5" Background="#FFC3CBC8" BorderBrush="Transparent" BorderThickness="1.5" VerticalAlignment="Center">
+                                <Ellipse x:Name="Knob" Width="11" Height="11" Fill="White" HorizontalAlignment="Left" Margin="1.5,0" />
+                            </Border>
+                            <ContentPresenter Margin="9,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="#FF1F6E6B" />
+                                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Track" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Track" Property="BorderBrush" Value="#FF0E3B39" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <!-- Window buttons of the title bar (minimise, maximise, full screen, close): flat, full bar height -->
         <Style x:Key="CaptionButton" TargetType="Button">
             <Setter Property="Width" Value="46" />
             <Setter Property="Height" Value="36" />
             <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
             <Setter Property="FontSize" Value="10" />
-            <Setter Property="Foreground" Value="#FF1F2D3D" />
+            <Setter Property="Foreground" Value="#FF1F2A30" />
             <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Focusable" Value="False" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -30,13 +149,13 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bg" Property="Background" Value="#FFDCE5EE" />
+                                <Setter TargetName="Bg" Property="Background" Value="#FFE4E9E7" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bg" Property="Background" Value="#FFC9D6E3" />
+                                <Setter TargetName="Bg" Property="Background" Value="#FFD5DCD9" />
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Bg" Property="Background" Value="#FFDCE5EE" />
+                                <Setter TargetName="Bg" Property="Background" Value="#FFE4E9E7" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -73,6 +192,7 @@
         <!-- Pop-ups (ToolTips) of the whole window: text wrapped at a readable width -->
         <Style TargetType="ToolTip">
             <Setter Property="MaxWidth" Value="300" />
+            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
             <Setter Property="ContentTemplate">
                 <Setter.Value>
                     <DataTemplate>
@@ -93,10 +213,10 @@
                                         <Thumb Width="14" Height="14">
                                             <Thumb.Template>
                                                 <ControlTemplate TargetType="Thumb">
-                                                    <Ellipse x:Name="Dot" Fill="#FF1F6FD1" Stroke="White" StrokeThickness="2" />
+                                                    <Ellipse x:Name="Dot" Fill="#FF1F6E6B" Stroke="White" StrokeThickness="2" />
                                                     <ControlTemplate.Triggers>
                                                         <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="Dot" Property="Fill" Value="#FF1A5FB4" />
+                                                            <Setter TargetName="Dot" Property="Fill" Value="#FF185957" />
                                                         </Trigger>
                                                     </ControlTemplate.Triggers>
                                                 </ControlTemplate>
@@ -111,7 +231,7 @@
                 <!-- One-line explanation under a value -->
                 <Style x:Key="Note" TargetType="TextBlock">
                     <Setter Property="TextWrapping" Value="Wrap" />
-                    <Setter Property="Foreground" Value="#FF606060" />
+                    <Setter Property="Foreground" Value="#FF5E6A70" />
                     <Setter Property="FontSize" Value="11" />
                     <Setter Property="Margin" Value="0,0,0,8" />
                 </Style>
@@ -123,7 +243,7 @@
                 <!-- One half of the 2D/3D switch: transparent on the grey track, the chosen half a blue pill with
                      white text; light blue under the mouse; a blue ring when it has the keyboard focus -->
                 <Style x:Key="Segment" TargetType="RadioButton">
-                    <Setter Property="Foreground" Value="#FF34495E" />
+                    <Setter Property="Foreground" Value="#FF3C474D" />
                     <Setter Property="FontWeight" Value="SemiBold" />
                     <Setter Property="Padding" Value="0,4" />
                     <Setter Property="Cursor" Value="Hand" />
@@ -137,14 +257,14 @@
                                 </Border>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="Pill" Property="Background" Value="#FFD6E4F5" />
+                                        <Setter TargetName="Pill" Property="Background" Value="#FFDCEBE9" />
                                     </Trigger>
                                     <Trigger Property="IsChecked" Value="True">
-                                        <Setter TargetName="Pill" Property="Background" Value="#FF1F6FD1" />
+                                        <Setter TargetName="Pill" Property="Background" Value="#FF1F6E6B" />
                                         <Setter Property="Foreground" Value="White" />
                                     </Trigger>
                                     <Trigger Property="IsKeyboardFocused" Value="True">
-                                        <Setter TargetName="Pill" Property="BorderBrush" Value="#FF0B3D80" />
+                                        <Setter TargetName="Pill" Property="BorderBrush" Value="#FF0E3B39" />
                                     </Trigger>
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>
@@ -157,7 +277,7 @@
             <Setter Property="Height" Value="32" />
             <Setter Property="Margin" Value="0,0,0,6" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Foreground" Value="#FF34495E" />
+            <Setter Property="Foreground" Value="#FF3C474D" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ButtonBase">
@@ -169,11 +289,11 @@
                                 <Setter TargetName="Face" Property="Opacity" Value="1" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Face" Property="Background" Value="#FFD6E4F5" />
+                                <Setter TargetName="Face" Property="Background" Value="#FFDCEBE9" />
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
                                 <Setter TargetName="Face" Property="Opacity" Value="1" />
-                                <Setter TargetName="Face" Property="BorderBrush" Value="#FF0B3D80" />
+                                <Setter TargetName="Face" Property="BorderBrush" Value="#FF0E3B39" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -197,7 +317,7 @@
 
         <!-- TITLE BAR (the window has no Windows caption, see WindowChrome): app name, the menus and Start simulation on the
              left, the window buttons on the right; any empty part drags the window and a double-click maximises it -->
-        <Border x:Name="TitleBar" Grid.Row="0" Grid.ColumnSpan="3" Height="36" Background="#FFF3F6F9" BorderBrush="#FFD5DFE5" BorderThickness="0,0,0,1">
+        <Border x:Name="TitleBar" Grid.Row="0" Grid.ColumnSpan="3" Height="36" Background="#FFF7F8F7" BorderBrush="#FFE1E5E3" BorderThickness="0,0,0,1">
         <DockPanel LastChildFill="False">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Button x:Name="WinMinBTN" Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="WinMin_Click" AutomationProperties.Name="Minimise" ToolTip="Minimise" />
@@ -206,11 +326,12 @@
             </StackPanel>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="True">
             <StackPanel Orientation="Horizontal" Margin="10,0,6,0" VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="False">
-                <Image x:Name="AppIconImage" Width="18" Height="18" Margin="0,0,7,0" Source="{Binding Icon, RelativeSource={RelativeSource AncestorType=Window}}" />
-                <TextBlock x:Name="AppGlyph" Text="&#xE709;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#FF1F6FD1" VerticalAlignment="Center" Margin="0,0,7,0" />
-                <TextBlock Text="Projecte P1" FontWeight="SemiBold" Foreground="#FF1F2D3D" VerticalAlignment="Center" />
+                <Image x:Name="AppIconImage" Width="24" Height="24" Margin="0,0,6,0" Source="pack://application:,,,/Assets/logo-256.png"
+                       RenderOptions.BitmapScalingMode="HighQuality" />
+
+                <TextBlock Text="Projecte P1" FontWeight="SemiBold" Foreground="#FF1F2A30" VerticalAlignment="Center" />
             </StackPanel>
-            <Rectangle Width="1" Height="18" Fill="#FFD5DFE5" Margin="6,0" VerticalAlignment="Center" />
+            <Rectangle Width="1" Height="18" Fill="#FFE1E5E3" Margin="6,0" VerticalAlignment="Center" />
             <Menu Background="Transparent" VerticalAlignment="Center">
                 <MenuItem Header="Load Data" Padding="4,2">
                     <MenuItem x:Name="DefaultDataItem" Header="Default data (Archives folder)" Click="LoadDefaultData_Click"/>
@@ -222,41 +343,10 @@
                 <MenuItem x:Name="ParamsMenu" Header="Parameters" Padding="4,2" Click="ParamsMenu_Click"
                           ToolTip="Entry and demand parameters: minimum time, reentry time, integration window, sliding step" />
             </Menu>
-            <Rectangle Width="1" Height="18" Fill="#FFD5DFE5" Margin="6,0" VerticalAlignment="Center" />
-            <!-- Main action: a rounded blue button with a play icon, grey while disabled (until the data is ready). Wrapped so
-                 the ToolBar does not give it its flat style -->
-            <Grid>
-                <Button x:Name="StartSimBTN" Margin="6,2" IsEnabled="False" Click="StartSimulation_Click" Cursor="Hand"
-                        AutomationProperties.Name="Start simulation" ToolTip="Play the traffic from the first take-off (again from the start if pressed later)">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="Bg" CornerRadius="5" Background="#FF1F6FD1" BorderBrush="#FF1F6FD1" BorderThickness="1" Padding="12,3">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="0,0,7,0" />
-                                    <TextBlock Text="Start simulation" Foreground="White" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Bg" Property="Background" Value="#FF1A5FB4" />
-                                </Trigger>
-                                <Trigger Property="IsPressed" Value="True">
-                                    <Setter TargetName="Bg" Property="Background" Value="#FF154C91" />
-                                </Trigger>
-                                <Trigger Property="IsKeyboardFocused" Value="True">
-                                    <Setter TargetName="Bg" Property="BorderBrush" Value="#FF0B2E5E" />
-                                </Trigger>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter TargetName="Bg" Property="Background" Value="#FFB8C4D0" />
-                                    <Setter TargetName="Bg" Property="BorderBrush" Value="#FFB8C4D0" />
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
-                </Button>
-            </Grid>
-            <!-- Analysis and results of the simulation: appear right of Start simulation once it has been run. Analysis opens
+            <!-- Analysis and results of the simulation: appear once the data is loaded (with the timeline). Analysis opens
                  the analysis window (its views are its tabs); Results has every export -->
+            <!-- Same hairline as after the app name, between Parameters and Analysis (only with Analysis shown) -->
+            <Rectangle Width="1" Height="18" Fill="#FFE1E5E3" Margin="6,0" VerticalAlignment="Center" Visibility="{Binding Visibility, ElementName=ResultsBar}" />
             <Menu x:Name="ResultsBar" Background="Transparent" VerticalAlignment="Center" Visibility="Collapsed">
                 <MenuItem x:Name="AnalysisMenu" Header="Analysis" Padding="4,2" Click="Analysis_Click"
                           ToolTip="Demand heat map, traffic over time, overload report and busiest sectors of the whole simulation" />
@@ -274,6 +364,8 @@
                     <MenuItem Header="Export all analysis (CSV)" Click="ExportAll_Click"
                               ToolTip="demand.csv, traffic.csv, sectors.csv and overloads.csv at once" />
                     <Separator />
+                    <MenuItem Header="Export folder…" Click="ExportFolder_Click"
+                              ToolTip="Choose where the exported files are saved and the name of their folder (asked once before the first export, remembered afterwards)" />
                     <MenuItem Header="Open Exports folder" Click="OpenExports_Click"/>
                 </MenuItem>
             </Menu>
@@ -293,7 +385,23 @@
              Does not take the mouse -->
         <Border x:Name="NoticeBox" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,14,0,0"
                 Padding="14,7" CornerRadius="6" Background="#E6202830" Opacity="0" IsHitTestVisible="False">
-            <TextBlock x:Name="NoticeText" Foreground="White" FontSize="13" />
+            <TextBlock x:Name="NoticeText" Foreground="White" FontSize="13" TextWrapping="Wrap" MaxWidth="560" />
+        </Border>
+
+        <!-- Nothing loaded yet: what to do (also after a failed load) -->
+        <Border x:Name="EmptyHint" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,18"
+                Padding="14,8" CornerRadius="6" Background="#E6202830" IsHitTestVisible="False">
+            <TextBlock Foreground="White" FontSize="13" Text="No data loaded yet: choose Load Data, then Default data or your own files." />
+        </Border>
+
+        <!-- WORK IN PROGRESS (the bottom status line was removed at the user's request): over the bottom of the map, only
+             while loading, computing or exporting; the result then shows as a fading notice (HideProgress) -->
+        <Border x:Name="WorkBox" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,18"
+                Padding="14,8,14,10" CornerRadius="6" Background="#E6202830" Visibility="Collapsed" IsHitTestVisible="False">
+            <StackPanel>
+                <TextBlock x:Name="StatusText" Foreground="White" FontSize="13" TextWrapping="Wrap" MaxWidth="560" />
+                <ProgressBar x:Name="WorkProgress" Height="4" Margin="0,7,0,0" Foreground="#FF7FC7C2" Background="#40FFFFFF" BorderThickness="0" />
+            </StackPanel>
         </Border>
 
         <!-- MAP BUTTONS: small, half-transparent buttons in the top-right corner of the map, shown once the data is loaded.
@@ -315,7 +423,7 @@
                         <RotateTransform x:Name="CompassNeedle" Angle="0" />
                     </Canvas.RenderTransform>
                     <Polygon Points="7,0 12,10 2,10" Fill="#FFD0342C" />
-                    <Polygon Points="2,10 12,10 7,20" Fill="#FF8A97A6" />
+                    <Polygon Points="2,10 12,10 7,20" Fill="#FF9AA3A6" />
                 </Canvas>
             </Button>
             <StackPanel x:Name="RotateButtons" Visibility="Collapsed">
@@ -337,7 +445,7 @@
         </ToggleButton>
         <Popup x:Name="FilterPopup" PlacementTarget="{Binding ElementName=MapFilterBTN}" Placement="Bottom" StaysOpen="False"
                AllowsTransparency="True" PopupAnimation="Fade" VerticalOffset="4">
-            <Border Background="White" BorderBrush="#FFC9D3DE" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,8,8">
+            <Border Background="White" BorderBrush="#FFD5DBD8" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,8,8">
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.25" />
                 </Border.Effect>
@@ -371,27 +479,27 @@
 
         <!-- SECTOR PANEL (right column): data of the sector double-clicked; the left strip is hidden meanwhile. Closing it
              (× or Esc) brings the strip back with all the sectors -->
-        <local:SectorPanel x:Name="SectorInfoPanel" Grid.Row="1" Grid.RowSpan="3" Grid.Column="2" Width="340" Visibility="Collapsed" />
+        <local:SectorPanel x:Name="SectorInfoPanel" Grid.Row="1" Grid.Column="2" Width="340" Visibility="Collapsed" />
         <!-- COMPARISON (same column): two or more sectors ticked in the list, one column each; the strip stays -->
-        <local:ComparePanel x:Name="ComparePanelView" Grid.Row="1" Grid.RowSpan="3" Grid.Column="2" Visibility="Collapsed" />
+        <local:ComparePanel x:Name="ComparePanelView" Grid.Row="1" Grid.Column="2" Visibility="Collapsed" />
 
         <!-- MAP strip, always visible on the left, from the toolbar to the bottom (collapsible with «): View on top (2D/3D
              switch, line options, flight levels shown), the sector list filling the rest, the colour legend at the bottom.
              Explanations are pop-ups (ToolTip) on hover. The entry and demand parameters are in the toolbar pop-up -->
-        <Border x:Name="ParamPanel" Grid.Row="1" Grid.RowSpan="3" Grid.Column="0" Width="340"
-                BorderBrush="#FFD5DFE5" BorderThickness="0,0,1,0" Background="White">
+        <Border x:Name="ParamPanel" Grid.Row="1" Grid.RowSpan="2" Grid.Column="0" Width="390"
+                BorderBrush="#FFE1E5E3" BorderThickness="0,0,1,0" Background="#FFF7F8F7">
             <DockPanel ToolTipService.InitialShowDelay="300" ToolTipService.ShowDuration="20000">
-                <Grid DockPanel.Dock="Top" Background="#FFEEF5FD">
+                <Grid DockPanel.Dock="Top" Background="#FFF7F8F7">
                     <TextBlock Text="Map" Margin="8,6" VerticalAlignment="Center" FontWeight="SemiBold" />
-                    <Button Content="«" ToolTip="Hide this panel" AutomationProperties.Name="Hide the map panel"
-                            HorizontalAlignment="Right" Margin="6,4" Padding="8,0" Click="ToggleParameters_Click" />
+                    <Button Content="«" Style="{StaticResource FlatButton}" Foreground="#FF5E6A70" FontSize="15" ToolTip="Hide this panel" AutomationProperties.Name="Hide the map panel"
+                            HorizontalAlignment="Right" Margin="6,2" Padding="8,0" Click="ToggleParameters_Click" />
                 </Grid>
 
                 <!-- VIEW: 2D/3D switch (left 2D map, right 3D globe): two radio buttons as one segmented control, the
                      line options and the flight levels shown -->
                 <StackPanel DockPanel.Dock="Top" Margin="10,8,10,0">
                     <TextBlock Text="View" FontWeight="SemiBold" />
-                    <Border Margin="0,4,0,6" Padding="2" CornerRadius="7" Background="#FFE9EEF4" BorderBrush="#FFC9D3DE" BorderThickness="1">
+                    <Border Margin="0,4,0,6" Padding="2" CornerRadius="7" Background="#FFE7EBE9" BorderBrush="#FFD5DBD8" BorderThickness="1">
                         <UniformGrid Columns="2">
                             <RadioButton x:Name="View2DBTN" GroupName="View" Content="2D map" Style="{StaticResource Segment}"
                                          ToolTip="Flat map: one shape per sector" AutomationProperties.Name="2D map view" Checked="View2D_Checked" />
@@ -400,7 +508,7 @@
                         </UniformGrid>
                     </Border>
                     <!-- What the map shows: the open sectors (default) or the traffic density of the whole simulation -->
-                    <Border Margin="0,0,0,6" Padding="2" CornerRadius="7" Background="#FFE9EEF4" BorderBrush="#FFC9D3DE" BorderThickness="1">
+                    <Border Margin="0,0,0,6" Padding="2" CornerRadius="7" Background="#FFE7EBE9" BorderBrush="#FFD5DBD8" BorderThickness="1">
                         <UniformGrid Columns="2">
                             <RadioButton x:Name="SectorsLayerBTN" GroupName="Layer" Content="Sectors" Style="{StaticResource Segment}" IsChecked="True"
                                          ToolTip="The open sectors at the timeline time, coloured by demand against capacity" AutomationProperties.Name="Show the sectors" />
@@ -413,35 +521,34 @@
                     <StackPanel x:Name="DensityLegend" Margin="0,0,0,6" Visibility="Collapsed">
                         <UniformGrid x:Name="DensityColors" Rows="1" Height="10" />
                         <DockPanel Margin="0,2,0,0">
-                            <TextBlock x:Name="DensityMax" DockPanel.Dock="Right" FontSize="10" Foreground="#FF606060" />
-                            <TextBlock Text="little" FontSize="10" Foreground="#FF606060" />
+                            <TextBlock x:Name="DensityMax" DockPanel.Dock="Right" FontSize="10" Foreground="#FF5E6A70" />
+                            <TextBlock Text="little" FontSize="10" Foreground="#FF5E6A70" />
                         </DockPanel>
                     </StackPanel>
-                    <CheckBox x:Name="MemberBordersBox" IsChecked="True" Margin="0,1" Checked="LineOptions_Changed" Unchecked="LineOptions_Changed"
+                    <CheckBox x:Name="MemberBordersBox" Style="{StaticResource Switch}" IsChecked="True" Margin="0,3" Checked="LineOptions_Changed" Unchecked="LineOptions_Changed"
                               Content="Borders inside collapsed sectors" AutomationProperties.Name="Show the borders inside collapsed sectors, white dashes"
                               ToolTip="White dashes: the borders between the elementary sectors that make up a collapsed sector. The solid black line is the outline of every sector." />
                     <!-- 2D only: shown while the 2D map is shown (SetView); in 3D the volumes show the heights -->
-                    <CheckBox x:Name="LevelStepsBox" IsChecked="False" Visibility="Collapsed" Margin="0,1" Checked="LineOptions_Changed" Unchecked="LineOptions_Changed"
+                    <CheckBox x:Name="LevelStepsBox" Style="{StaticResource Switch}" IsChecked="False" Visibility="Collapsed" Margin="0,3" Checked="LineOptions_Changed" Unchecked="LineOptions_Changed"
                               Content="Height steps" AutomationProperties.Name="Show the height steps, black dots"
                               ToolTip="Black dots: where a sector's floor or ceiling changes. 2D map only: in 3D the volumes show the heights." />
 
                     <!-- Flight levels shown: two-handle slider (two sliders on one track, only their handles take the mouse).
                          Display only: applied a moment after the last move (FlApplyTimer) -->
                     <StackPanel Margin="0,6,0,0"
-                                ToolTip="Only the sectors (cut to these levels) and the aircraft between the two flight levels are drawn and listed. Display only: the entries, the demand and the colours always use all the levels. FL 600+ = no upper limit.">
+                                ToolTip="Only the sectors (cut to these levels) and the aircraft between the two flight levels are drawn and listed. Display only: the entries, the demand and the colours always use all the levels. The scale ends at the highest flight level of the traffic + 10; at the top, sectors are drawn whole.">
                         <DockPanel>
-                            <TextBlock x:Name="FlRangeText" DockPanel.Dock="Right" FontFamily="Consolas" Text="FL000 - 600+" VerticalAlignment="Center" />
+                            <TextBlock x:Name="FlRangeText" DockPanel.Dock="Right" FontFamily="{StaticResource UiCondensed}" FontWeight="SemiBold" FontSize="14" Typography.NumeralAlignment="Tabular" Text="FL000 - 600" VerticalAlignment="Center" />
                             <TextBlock Text="Flight levels shown" VerticalAlignment="Center" />
                         </DockPanel>
                         <Grid x:Name="FlRangeTrack" Height="22" Margin="0,2,0,0" SizeChanged="FlRangeTrack_SizeChanged">
-                            <Border Height="4" CornerRadius="2" Background="#FFC9D3DE" VerticalAlignment="Center" Margin="7,0" />
-                            <Border x:Name="FlRangeFill" Height="4" CornerRadius="2" Background="#FF1F6FD1" VerticalAlignment="Center" HorizontalAlignment="Left" Margin="7,0" />
+                            <Border Height="4" CornerRadius="2" Background="#FFD5DBD8" VerticalAlignment="Center" Margin="7,0" />
+                            <Border x:Name="FlRangeFill" Height="4" CornerRadius="2" Background="#FF1F6E6B" VerticalAlignment="Center" HorizontalAlignment="Left" Margin="7,0" />
                             <Slider x:Name="FlFromSlider" Style="{StaticResource RangeHandle}" Minimum="0" Maximum="600" Value="0" SmallChange="10" LargeChange="50"
                                     TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="FlSlider_ValueChanged" AutomationProperties.Name="Lowest flight level shown" />
                             <Slider x:Name="FlToSlider" Style="{StaticResource RangeHandle}" Minimum="0" Maximum="600" Value="600" SmallChange="10" LargeChange="50"
                                     TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="FlSlider_ValueChanged" AutomationProperties.Name="Highest flight level shown" />
                         </Grid>
-                        <TextBlock Style="{StaticResource Note}" Text="Display only: entries and demand use all levels." />
                     </StackPanel>
                 </StackPanel>
 
@@ -469,16 +576,16 @@
                      entries) -->
                 <DockPanel Margin="10,8,10,0">
                     <DockPanel DockPanel.Dock="Top">
-                        <Button x:Name="ShowAllBTN" DockPanel.Dock="Right" Content="Show all" Padding="8,0" Visibility="Collapsed"
+                        <Button x:Name="ShowAllBTN" DockPanel.Dock="Right" Content="Show all" Style="{StaticResource FlatButton}" Padding="6,1" Visibility="Collapsed"
                                 Click="ShowAll_Click" ToolTip="Untick everything and show all the sectors and aircraft again (Esc)" />
-                        <TextBlock x:Name="TickedText" DockPanel.Dock="Right" Margin="0,0,8,0" VerticalAlignment="Center" FontSize="11" Foreground="#FF5A6773" />
+                        <TextBlock x:Name="TickedText" DockPanel.Dock="Right" Margin="0,0,8,0" VerticalAlignment="Center" FontSize="11" Foreground="#FF5E6A70" />
                         <TextBlock Text="Sectors" FontWeight="SemiBold" VerticalAlignment="Center"
                                    ToolTip="Open sectors shown at the timeline time. Tick sectors to show only them and their aircraft; with two or more ticked a comparison opens on the right. Double-click a row (or a sector on the map) to zoom to it and open its panel." />
                     </DockPanel>
                     <Grid DockPanel.Dock="Top" Margin="0,4">
                         <TextBox x:Name="SectorSearchBox" TextChanged="SectorSearch_TextChanged" VerticalContentAlignment="Center" Padding="2,1"
                                  AutomationProperties.Name="Search sectors" ToolTip="Filter the list by sector, ACC or configuration" />
-                        <TextBlock Text="Search sector, ACC or configuration" Foreground="#FF9AA5B1" Margin="5,0" VerticalAlignment="Center" IsHitTestVisible="False">
+                        <TextBlock Text="Search sector, ACC or configuration" Foreground="#FF98A2A6" Margin="5,0" VerticalAlignment="Center" IsHitTestVisible="False">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Visibility" Value="Collapsed" />
@@ -491,50 +598,152 @@
                             </TextBlock.Style>
                         </TextBlock>
                     </Grid>
+                    <!-- B2 look: no gridlines, one rule under the header, faint alternate rows, ticked/selected rows in a teal tint.
+                         Columns: Load right after the name (the most important figure), Cap/h wide enough for its header -->
                     <DataGrid x:Name="SectorGrid" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" SelectionMode="Single"
-                              SelectionUnit="FullRow" CanUserAddRows="False" CanUserResizeRows="False" GridLinesVisibility="None" FontSize="11"
-                              BorderBrush="#FFC9D3DE" Background="White" RowBackground="White" AlternatingRowBackground="#FFF6F8FB"
-                              MouseDoubleClick="SectorGrid_MouseDoubleClick"
+                              SelectionUnit="FullRow" CanUserAddRows="False" CanUserResizeRows="False" GridLinesVisibility="None" FontSize="12"
+                              BorderThickness="0" Background="Transparent" RowBackground="Transparent" AlternatingRowBackground="#FFF0F2F1"
+                              RowHeight="25" MouseDoubleClick="SectorGrid_MouseDoubleClick" Sorting="SectorGrid_Sorting"
+                              EnableRowVirtualization="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                               AutomationProperties.Name="Open sectors">
+                        <DataGrid.ColumnHeaderStyle>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background" Value="#FFF7F8F7" />
+                                <Setter Property="Foreground" Value="#FF5E6A70" />
+                                <Setter Property="FontSize" Value="12" />
+                                <Setter Property="Padding" Value="5,6,5,5" />
+                                <Setter Property="BorderBrush" Value="#FFD5DBD8" />
+                                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                                <Setter Property="SeparatorVisibility" Value="Collapsed" />
+                                <!-- Same look, plus a small teal arrow after the name of the column the list is sorted by
+                                     (up = lowest first, down = highest first). The grippers keep the columns resizable -->
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="DataGridColumnHeader">
+                                            <Grid>
+                                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}">
+                                                        <ContentPresenter VerticalAlignment="Center" />
+                                                        <Path x:Name="SortArrow" Width="7" Height="4" Margin="4,0,0,0" VerticalAlignment="Center"
+                                                              Stretch="Fill" Fill="#FF1F6E6B" Visibility="Collapsed" Data="M0,4 L3.5,0 L7,4 Z" />
+                                                    </StackPanel>
+                                                </Border>
+                                                <Thumb x:Name="PART_LeftHeaderGripper" HorizontalAlignment="Left" Width="4" Cursor="SizeWE">
+                                                    <Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="Transparent" /></ControlTemplate></Thumb.Template>
+                                                </Thumb>
+                                                <Thumb x:Name="PART_RightHeaderGripper" HorizontalAlignment="Right" Width="4" Cursor="SizeWE">
+                                                    <Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="Transparent" /></ControlTemplate></Thumb.Template>
+                                                </Thumb>
+                                            </Grid>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="SortDirection" Value="Ascending">
+                                                    <Setter TargetName="SortArrow" Property="Visibility" Value="Visible" />
+                                                </Trigger>
+                                                <Trigger Property="SortDirection" Value="Descending">
+                                                    <Setter TargetName="SortArrow" Property="Visibility" Value="Visible" />
+                                                    <Setter TargetName="SortArrow" Property="Data" Value="M0,0 L7,0 L3.5,4 Z" />
+                                                </Trigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Foreground" Value="#FF1F2A30" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </DataGrid.ColumnHeaderStyle>
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsChecked}" Value="True">
+                                        <Setter Property="Background" Value="#FFE2EEEC" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="BorderThickness" Value="0" />
+                                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="DataGridCell">
+                                            <Border Background="{TemplateBinding Background}">
+                                                <ContentPresenter VerticalAlignment="Center" />
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#FFD5E7E4" />
+                                        <Setter Property="Foreground" Value="#FF1F2A30" />
+                                        <Setter Property="BorderBrush" Value="Transparent" />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.CellStyle>
                         <DataGrid.Columns>
                             <!-- Tick = shown on the map (none ticked = all); two or more open the comparison -->
-                            <DataGridTemplateColumn Width="24" SortMemberPath="IsChecked">
-                                <DataGridTemplateColumn.Header><TextBlock Text="&#xE73E;" FontFamily="Segoe MDL2 Assets" FontSize="10" ToolTip="Ticked sectors are the only ones shown on the map; tick two or more to compare them" /></DataGridTemplateColumn.Header>
+                            <!-- Header = a master checkbox, Gmail style: empty when nothing is ticked, a dash (indeterminate) when some
+                                 sectors are; clicking it then unticks them all (UpdateMasterTick sets its state). The column does not sort -->
+                            <DataGridTemplateColumn Width="26" CanUserSort="False">
+                                <DataGridTemplateColumn.Header>
+                                    <CheckBox x:Name="UntickAllBox" Style="{StaticResource TickBox}" IsThreeState="True" IsChecked="False" Click="UntickAll_Click" Margin="1,0,0,0"
+                                              ToolTip="Untick all the sectors (all are shown again). Ticked sectors are the only ones shown on the map; tick two or more to compare them."
+                                              AutomationProperties.Name="Untick all the sectors" />
+                                </DataGridTemplateColumn.Header>
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Checked="SectorCheck_Changed" Unchecked="SectorCheck_Changed"
+                                        <CheckBox Style="{StaticResource TickBox}" IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Checked="SectorCheck_Changed" Unchecked="SectorCheck_Changed"
                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
                                                   Focusable="True" AutomationProperties.Name="{Binding Sector, StringFormat=Show {0}}" />
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Binding="{Binding Sector}" Width="66">
+                            <DataGridTextColumn Binding="{Binding Sector}" Width="74">
                                 <DataGridTextColumn.Header><TextBlock Text="Sector" ToolTip="Sector of the open configuration (elementary or collapsed)" /></DataGridTextColumn.Header>
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontFamily" Value="{StaticResource UiCondensed}" />
+                                        <Setter Property="FontWeight" Value="Bold" />
+                                        <Setter Property="FontSize" Value="13" />
+                                        <Setter Property="Margin" Value="3,0,0,0" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Binding="{Binding Acc}" Width="61">
-                                <DataGridTextColumn.Header><TextBlock Text="ACC" ToolTip="ACC whose configuration has the sector open" /></DataGridTextColumn.Header>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Binding="{Binding Configuration}" Width="36">
-                                <DataGridTextColumn.Header><TextBlock Text="Cfg" ToolTip="Configuration open in that ACC now" /></DataGridTextColumn.Header>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Binding="{Binding Demand}" Width="33">
-                                <DataGridTextColumn.Header><TextBlock Text="Dem" ToolTip="Demand: entries in the current window [start, end)" /></DataGridTextColumn.Header>
-                                <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Right" /></Style></DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Binding="{Binding CapacityText}" SortMemberPath="CapacitySort" Width="36">
-                                <DataGridTextColumn.Header><TextBlock Text="Cap/h" ToolTip="Nominal capacity per hour (capacity file); none = no limit" /></DataGridTextColumn.Header>
-                                <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Right" /></Style></DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
-                            <DataGridTemplateColumn SortMemberPath="Load" Width="*">
-                                <DataGridTemplateColumn.Header><TextBlock Text="Load" ToolTip="Demand / capacity in the window (capacity per hour × window / 60), coloured like the map" /></DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn SortMemberPath="Load" Width="60">
+                                <DataGridTemplateColumn.Header><TextBlock Text="Load" ToolTip="Demand / capacity in the window (capacity per hour × window / 60), coloured like the map; - = no limit" /></DataGridTemplateColumn.Header>
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Border Background="{Binding StatusBrush}" CornerRadius="3" Padding="4,0" Margin="1">
-                                            <TextBlock Text="{Binding LoadText}" HorizontalAlignment="Right" />
+                                        <Border Background="{Binding StatusBrush}" CornerRadius="4" Padding="5,1" Margin="0,0,6,0" HorizontalAlignment="Right" VerticalAlignment="Center" MinWidth="44">
+                                            <TextBlock Text="{Binding LoadText}" HorizontalAlignment="Right" FontWeight="SemiBold" Foreground="{Binding StatusInk}" />
                                         </Border>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
+                            <DataGridTextColumn Binding="{Binding Demand}" Width="38">
+                                <DataGridTextColumn.Header><TextBlock Text="Dem" ToolTip="Demand: entries in the current window [start, end)" /></DataGridTextColumn.Header>
+                                <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Right" /><Setter Property="Margin" Value="0,0,6,0" /></Style></DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Binding="{Binding CapacityText}" SortMemberPath="CapacitySort" Width="46">
+                                <DataGridTextColumn.Header><TextBlock Text="Cap/h" ToolTip="Nominal capacity per hour (capacity file); none = no limit" /></DataGridTextColumn.Header>
+                                <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Right" /><Setter Property="Margin" Value="0,0,6,0" /><Setter Property="Foreground" Value="#FF5E6A70" /></Style></DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Binding="{Binding Acc}" Width="68">
+                                <DataGridTextColumn.Header><TextBlock Text="ACC" ToolTip="ACC whose configuration has the sector open" /></DataGridTextColumn.Header>
+                                <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="Foreground" Value="#FF5E6A70" /><Setter Property="Margin" Value="3,0,0,0" /></Style></DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <!-- Fixed width set in code to fill the strip (FitConfigColumn). A star width with the horizontal
+                                 scroll bar on Auto made the bar flip on and off at each value change: the main cause of the
+                                 hitches at high speed (the bar is disabled above) -->
+                            <DataGridTextColumn Binding="{Binding Configuration}" Width="80">
+                                <DataGridTextColumn.Header><TextBlock Text="Cfg" ToolTip="Configuration open in that ACC now" /></DataGridTextColumn.Header>
+                                <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="Foreground" Value="#FF5E6A70" /><Setter Property="Margin" Value="3,0,0,0" /></Style></DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -546,7 +755,7 @@
              are rarely changed, so they are out of the strip. Enter applies, Esc closes; it closes when clicking elsewhere -->
         <Popup x:Name="ParamsPopup" PlacementTarget="{Binding ElementName=ParamsMenu}" Placement="Bottom" StaysOpen="False"
                AllowsTransparency="True" PopupAnimation="Fade">
-            <Border Background="White" BorderBrush="#FFC9D3DE" BorderThickness="1" CornerRadius="6" Padding="12,10" Width="290" Margin="0,2,8,8"
+            <Border Background="White" BorderBrush="#FFD5DBD8" BorderThickness="1" CornerRadius="6" Padding="12,10" Width="290" Margin="0,2,8,8"
                     PreviewKeyDown="ParamsPopup_KeyDown">
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.25" />
@@ -589,7 +798,7 @@
         </Popup>
 
         <!-- The strip hidden: only this narrow button stays, to show it again -->
-        <Button x:Name="ParamShowBTN" Grid.Row="1" Grid.RowSpan="3" Grid.Column="0" Visibility="Collapsed" Width="26" Padding="0"
+        <Button x:Name="ParamShowBTN" Grid.Row="1" Grid.RowSpan="2" Grid.Column="0" Visibility="Collapsed" Width="26" Padding="0"
                 ToolTip="Show the map panel" AutomationProperties.Name="Show the map panel" Click="ToggleParameters_Click"
                 VerticalContentAlignment="Top">
             <TextBlock Text="Map »" Margin="0,8,0,0">
@@ -599,11 +808,33 @@
             </TextBlock>
         </Button>
 
+        <!-- DRAG GRIPS: the inner edge of the strip and of the right panel (sector panel or comparison) can be dragged to
+             widen them. Nothing drawn (the hairline is the panel's own border), only the resize cursor. Limits in the code:
+             never narrower than the design width, never wider than what the content can use. Double-click = design width -->
+        <Thumb x:Name="StripGrip" Grid.Row="1" Grid.RowSpan="2" Grid.Column="0" Width="7" HorizontalAlignment="Right" Cursor="SizeWE"
+               Background="Transparent" DragDelta="StripGrip_DragDelta" MouseDoubleClick="StripGrip_DoubleClick"
+               Visibility="{Binding Visibility, ElementName=ParamPanel}" ToolTip="Drag to widen the list (double-click: back to normal)"
+               AutomationProperties.Name="Width of the map strip">
+            <Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="Transparent" /></ControlTemplate></Thumb.Template>
+        </Thumb>
+        <Thumb x:Name="PanelGrip" Grid.Row="1" Grid.Column="2" Width="7" HorizontalAlignment="Left" Cursor="SizeWE"
+               Background="Transparent" DragDelta="PanelGrip_DragDelta" MouseDoubleClick="PanelGrip_DoubleClick"
+               Visibility="{Binding Visibility, ElementName=SectorInfoPanel}" ToolTip="Drag to widen the panel (double-click: back to normal)"
+               AutomationProperties.Name="Width of the sector panel">
+            <Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="Transparent" /></ControlTemplate></Thumb.Template>
+        </Thumb>
+        <Thumb x:Name="CompareGrip" Grid.Row="1" Grid.Column="2" Width="7" HorizontalAlignment="Left" Cursor="SizeWE"
+               Background="Transparent" DragDelta="PanelGrip_DragDelta" MouseDoubleClick="PanelGrip_DoubleClick"
+               Visibility="{Binding Visibility, ElementName=ComparePanelView}" ToolTip="Drag to widen the comparison (double-click: back to normal)"
+               AutomationProperties.Name="Width of the comparison">
+            <Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="Transparent" /></ControlTemplate></Thumb.Template>
+        </Thumb>
+
         <!-- Timeline: relevant trajectories played in time order; hidden until there is something to simulate -->
         <!-- Media-player style: round play/pause/replay button (icon from SetPlaying, its name for screen readers), speed as a
              pill opening a menu, a thin track with the played part blue and a round thumb, the time in bold -->
-        <Border x:Name="TimelineBar" Grid.Row="2" Grid.Column="1" Visibility="Collapsed"
-                BorderBrush="#FFD5DFE5" BorderThickness="0,1,0,0" Background="White">
+        <Border x:Name="TimelineBar" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Visibility="Collapsed"
+                BorderBrush="#FFE1E5E3" BorderThickness="0,1,0,0" Background="White">
             <Grid Margin="8,5">
                 <Grid.Resources>
                     <Style x:Key="TrackPart" TargetType="RepeatButton">
@@ -627,19 +858,19 @@
                                 <ControlTemplate TargetType="Slider">
                                     <Track x:Name="PART_Track" Height="22">
                                         <Track.DecreaseRepeatButton>
-                                            <RepeatButton Style="{StaticResource TrackPart}" Background="#FF1F6FD1" Command="Slider.DecreaseLarge" />
+                                            <RepeatButton Style="{StaticResource TrackPart}" Background="#FF1F6E6B" Command="Slider.DecreaseLarge" />
                                         </Track.DecreaseRepeatButton>
                                         <Track.IncreaseRepeatButton>
-                                            <RepeatButton Style="{StaticResource TrackPart}" Background="#FFD5DFE5" Command="Slider.IncreaseLarge" />
+                                            <RepeatButton Style="{StaticResource TrackPart}" Background="#FFE1E5E3" Command="Slider.IncreaseLarge" />
                                         </Track.IncreaseRepeatButton>
                                         <Track.Thumb>
                                             <Thumb Width="14" Height="14">
                                                 <Thumb.Template>
                                                     <ControlTemplate TargetType="Thumb">
-                                                        <Ellipse x:Name="Dot" Fill="White" Stroke="#FF1F6FD1" StrokeThickness="3" />
+                                                        <Ellipse x:Name="Dot" Fill="White" Stroke="#FF1F6E6B" StrokeThickness="3" />
                                                         <ControlTemplate.Triggers>
                                                             <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter TargetName="Dot" Property="Fill" Value="#FFD6E4F5" />
+                                                                <Setter TargetName="Dot" Property="Fill" Value="#FFDCEBE9" />
                                                             </Trigger>
                                                         </ControlTemplate.Triggers>
                                                     </ControlTemplate>
@@ -664,18 +895,18 @@
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
                             <Grid>
-                                <Ellipse x:Name="Disc" Fill="#FF1F6FD1" />
+                                <Ellipse x:Name="Disc" Fill="#FF1F6E6B" />
                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Grid>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Disc" Property="Fill" Value="#FF1A5FB4" />
+                                    <Setter TargetName="Disc" Property="Fill" Value="#FF185957" />
                                 </Trigger>
                                 <Trigger Property="IsPressed" Value="True">
-                                    <Setter TargetName="Disc" Property="Fill" Value="#FF154C91" />
+                                    <Setter TargetName="Disc" Property="Fill" Value="#FF134846" />
                                 </Trigger>
                                 <Trigger Property="IsKeyboardFocused" Value="True">
-                                    <Setter TargetName="Disc" Property="Stroke" Value="#FF0B2E5E" />
+                                    <Setter TargetName="Disc" Property="Stroke" Value="#FF0E3B39" />
                                     <Setter TargetName="Disc" Property="StrokeThickness" Value="2" />
                                 </Trigger>
                             </ControlTemplate.Triggers>
@@ -688,19 +919,19 @@
                         AutomationProperties.Name="Playback speed" ToolTip="Playback speed: simulated seconds per real second">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
-                            <Border x:Name="Pill" CornerRadius="12" Background="#FFEEF2F7" BorderBrush="#FFC9D3DE" BorderThickness="1" Padding="{TemplateBinding Padding}">
+                            <Border x:Name="Pill" CornerRadius="12" Background="#FFEFF2F1" BorderBrush="#FFD5DBD8" BorderThickness="1" Padding="{TemplateBinding Padding}">
                                 <ContentPresenter VerticalAlignment="Center" />
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Pill" Property="Background" Value="#FFD6E4F5" />
+                                    <Setter TargetName="Pill" Property="Background" Value="#FFDCEBE9" />
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
                     </Button.Template>
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock x:Name="SpeedText" Text="60x" FontWeight="SemiBold" Foreground="#FF34495E" />
-                        <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="8" Margin="6,1,0,0" VerticalAlignment="Center" Foreground="#FF34495E" />
+                        <TextBlock x:Name="SpeedText" Text="60x" FontWeight="SemiBold" Foreground="#FF3C474D" />
+                        <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="8" Margin="6,1,0,0" VerticalAlignment="Center" Foreground="#FF3C474D" />
                     </StackPanel>
                     <Button.ContextMenu>
                         <ContextMenu x:Name="SpeedMenu" />
@@ -712,9 +943,9 @@
                         SizeChanged="OpenPeriodMarks_SizeChanged" />
                 <Slider x:Name="TimeSlider" Grid.Column="2" Margin="6,0" VerticalAlignment="Center" Style="{StaticResource TimelineSlider}"
                         ValueChanged="TimeSlider_ValueChanged" AutomationProperties.Name="Simulation time" />
-                <TextBlock x:Name="TimeText" Grid.Column="3" Margin="8,0" VerticalAlignment="Center" FontFamily="Consolas" FontSize="13" FontWeight="Bold" Foreground="#FF1F2D3D" />
+                <TextBlock x:Name="TimeText" Grid.Column="3" Margin="8,0" VerticalAlignment="Center" FontFamily="{StaticResource UiCondensed}" FontSize="16" FontWeight="Bold" Foreground="#FF1F2A30" Typography.NumeralAlignment="Tabular" />
                 <!-- Fixed length (AirDescription pads every field), so the slider does not change width while playing -->
-                <TextBlock x:Name="AirText" Grid.Column="4" VerticalAlignment="Center" FontFamily="Consolas"
+                <TextBlock x:Name="AirText" Grid.Column="4" VerticalAlignment="Center" FontFamily="{StaticResource UiFont}" Typography.NumeralAlignment="Tabular" MinWidth="380"
                            ToolTip="Aircraft shown (or when the next one appears) · open sectors shown · sectors near the limit (80-100 %) · overloaded sectors (&gt; 100 %) · current demand window" />
             </Grid>
         </Border>
@@ -722,13 +953,5 @@
         <!-- Status line: what the app is doing or just did (loading, export, end of the simulation). Full width at the bottom,
              always visible: inside the ToolBar it was moved to the overflow arrow when the window was not wide enough.
              The progress bar on its right is shown only while something runs in the background -->
-        <Border Grid.Row="3" Grid.Column="1" BorderBrush="#FFD5DFE5" BorderThickness="0,1,0,0" Background="#FFF7F9FC">
-            <DockPanel Margin="8,3">
-                <ProgressBar x:Name="WorkProgress" DockPanel.Dock="Right" Width="240" Height="14" Margin="10,0,0,0" Visibility="Collapsed" />
-                <TextBlock x:Name="StatusText" FontSize="12" Foreground="#FF404040" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                           ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
-                           Text="No data loaded. Use Load Data > Default data." />
-            </DockPanel>
-        </Border>
     </Grid>
 </Window>

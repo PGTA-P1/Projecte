@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 
@@ -31,6 +32,35 @@ namespace Projecte1_WPF_.ReadData
             string where = Path.GetFileName(filePath) + (lineNumber > 0 ? $", line {lineNumber.ToString("N0", CultureInfo.InvariantCulture)}" : "");
             string text = lineText == null ? "" : $"\n  Line: \"{(lineText.Length > 120 ? lineText.Substring(0, 120) + "…" : lineText)}\"";
             return $"{where}: {problem}{text}";
+        }
+    }
+
+    // SKIP MODE of the readers (the user's choice in the data files window, per file): a reader given a 'skipped' list does
+    // not stop at a bad line; it leaves out the whole thing the line belongs to (the flight, the airblock, the elementary
+    // sector, the airspace, the configuration, or one capacity line) and notes it here. null = strict: the first problem
+    // is thrown. The ACCs and the opening scheme have no skip mode: a hole there changes which sectors are open
+    public static class Skips
+    {
+        public static void Add(List<string> skipped, DataFileException ex, string leftOut)
+        {
+            skipped.Add((ex.LineNumber > 0 ? $"line {ex.LineNumber.ToString("N0", CultureInfo.InvariantCulture)}: " : "") + ex.Problem + " - " + leftOut);
+        }
+
+        // Inputs whose reader can skip
+        public static bool Supports(DataRole role) => role != DataRole.Accs && role != DataRole.OpeningScheme;
+
+        // What is left out, for the button and the messages
+        public static string Unit(DataRole role)
+        {
+            switch (role)
+            {
+                case DataRole.Trajectories: return "flight";
+                case DataRole.Airblocks: return "airblock";
+                case DataRole.ElementarySectors: return "elementary sector";
+                case DataRole.Airspaces: return "airspace";
+                case DataRole.Configurations: return "configuration";
+                default: return "line";
+            }
         }
     }
 
@@ -69,6 +99,9 @@ namespace Projecte1_WPF_.ReadData
         {
             if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double result))
                 throw Error($"{field} must be a number with a decimal point, found \"{value}\"");
+            // "NaN", "Infinity" and numbers too large for a double (1e999) parse without error: not usable values
+            if (double.IsNaN(result) || double.IsInfinity(result))
+                throw Error($"{field} must be an ordinary number, found \"{value}\" (not a number, or too large)");
             return result;
         }
 

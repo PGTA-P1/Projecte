@@ -46,25 +46,50 @@ namespace Projecte1_WPF_.ArcGisMethods
             _view = view;
         }
 
-        public void Add(string name, IEnumerable<IMergedSector> bands)
-        {
-            List<IMergedSector> list = bands.ToList();
-            var ring = list.SelectMany(b => b.OuterRings).OrderByDescending(BoxArea).FirstOrDefault();
-            if (ring == null || ring.Count < 3)
-                return;
+        // Label point of a ring (Simplify + LabelPoint), computed once (thread-safe, so Prepare can fill it in the background)
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<object, MapPoint> _points =
+            new System.Collections.Concurrent.ConcurrentDictionary<object, MapPoint>();
 
+        public static void ClearCache() => _points.Clear();
+
+        // The ring the label goes in: the largest outline of the sector's bands
+        private static List<(double Latitude, double Longitude)> LabelRing(IEnumerable<IMergedSector> bands) =>
+            bands.SelectMany(b => b.OuterRings).OrderByDescending(BoxArea).FirstOrDefault();
+
+        private static MapPoint PointOf(List<(double Latitude, double Longitude)> ring) => _points.GetOrAdd(ring, _ =>
+        {
             var builder = new PolygonBuilder(SpatialReferences.Wgs84);
             foreach (var v in ring)
                 builder.AddPoint(v.Longitude, v.Latitude);
-            if (!(GeometryEngine.Simplify(builder.ToGeometry()) is Polygon polygon) || polygon.IsEmpty)
+            return GeometryEngine.Simplify(builder.ToGeometry()) is Polygon polygon && !polygon.IsEmpty ? GeometryEngine.LabelPoint(polygon) : null;
+        });
+
+        // Computes the label point of these bands ahead of time (any thread)
+        public static void Prepare(IEnumerable<IMergedSector> bands)
+        {
+            var ring = LabelRing(bands);
+            if (ring != null && ring.Count >= 3)
+                PointOf(ring);
+        }
+
+        // Labels drawn now, by name, with their point (the overlap test reads these instead of the overlay's graphics)
+        private readonly Dictionary<string, (Graphic Graphic, MapPoint At)> _byName = new Dictionary<string, (Graphic, MapPoint)>(StringComparer.Ordinal);
+
+        public void Add(string name, IEnumerable<IMergedSector> bands)
+        {
+            List<IMergedSector> list = bands.ToList();
+            var ring = LabelRing(list);
+            if (ring == null || ring.Count < 3)
                 return;
-            MapPoint at = GeometryEngine.LabelPoint(polygon);
+            MapPoint at = PointOf(ring);
+            if (at == null)
+                return;
             double topM = Math.Min(list.Max(b => b.TopLevel), MAX_VISIBLE_FL) * FL_TO_M;
+            Remove(name);
 
             // Sectors stacked over the same ground (e.g. a lower and an upper sector) get the same label point: each label
             // that would cover one already there goes one line lower
-            int covered = _overlay.Graphics.Count(g => g.Geometry is MapPoint p &&
-                                                       Math.Abs(p.Y - at.Y) < OVERLAP_LAT && Math.Abs(p.X - at.X) < OVERLAP_LON);
+            int covered = _byName.Values.Count(v => Math.Abs(v.At.Y - at.Y) < OVERLAP_LAT && Math.Abs(v.At.X - at.X) < OVERLAP_LON);
             var text = new TextSymbol(name, Color.White, 11,
                                       Esri.ArcGISRuntime.Symbology.HorizontalAlignment.Center,
                                       Esri.ArcGISRuntime.Symbology.VerticalAlignment.Middle)
@@ -76,22 +101,28 @@ namespace Projecte1_WPF_.ArcGisMethods
             var graphic = new Graphic(new MapPoint(at.X, at.Y, topM, SpatialReferences.Wgs84), text);
             graphic.Attributes["name"] = name;
             _overlay.Graphics.Add(graphic);
+            _byName[name] = (graphic, at);
         }
 
         public void SetVisible(string name, bool visible)
         {
-            foreach (Graphic g in _overlay.Graphics)
-                if ((string)g.Attributes["name"] == name && g.IsVisible != visible)
-                    g.IsVisible = visible;
+            if (_byName.TryGetValue(name, out var label) && label.Graphic.IsVisible != visible)
+                label.Graphic.IsVisible = visible;
         }
 
         public void Remove(string name)
         {
-            foreach (Graphic g in _overlay.Graphics.Where(g => (string)g.Attributes["name"] == name).ToList())
-                _overlay.Graphics.Remove(g);
+            if (!_byName.TryGetValue(name, out var label))
+                return;
+            _overlay.Graphics.Remove(label.Graphic);
+            _byName.Remove(name);
         }
 
-        public void Clear() => _overlay.Graphics.Clear();
+        public void Clear()
+        {
+            _overlay.Graphics.Clear();
+            _byName.Clear();
+        }
 
         public bool IsVisible
         {

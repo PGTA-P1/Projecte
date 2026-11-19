@@ -217,7 +217,45 @@ namespace Projecte1_WPF_.ArcGisMethods
             FlFrom = flFrom;
             FlTo = flTo;
             _outlines.Plans = plans;
+            PlotSectorPlan.ClearCache();   // geometry of the previous plans
             Clear();
+            WarmUp();
+        }
+
+        // Builds the drawing geometry of every sector of every configuration (prisms, plan lines, label points) in the
+        // background, so a configuration change only adds ready graphics instead of computing them on the UI thread
+        // (that computing was a visible stall at every change, longest at high playback speeds)
+        private void WarmUp()
+        {
+            SectorOutlines o = _outlines;
+            int from = FlFrom, to = FlTo;
+            if (o == null)
+                return;
+            var sectors = o.Elementary.Concat(o.Collapsed).ToList();
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    System.Threading.Tasks.Parallel.ForEach(sectors, kv =>
+                    {
+                        List<IMergedSector> bands = Cut(kv.Value, from, to);
+                        if (bands.Count == 0)
+                            return;
+                        PlotAirspaces3D.Prepare(bands);
+                        PlotSectorLabels.Prepare(bands);
+                        if (o.Plans.TryGetValue(kv.Key, out SectorPlan plan))
+                        {
+                            PlotSectorPlan.Prepare(plan, null, threeD: false);
+                            PlotSectorPlan.Prepare(plan, bands, threeD: true);
+                        }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    // Only a head start: whatever is missing is built when drawn
+                    System.Diagnostics.Debug.WriteLine("[PlotOpenSectors] warm-up: " + ex.Message);
+                }
+            });
         }
 
         // A band of a sector cut to the flight levels shown
@@ -230,17 +268,19 @@ namespace Projecte1_WPF_.ArcGisMethods
         }
 
         // The bands of a sector inside [FlFrom, FlTo), cut to it; empty if the sector is entirely outside
-        private List<IMergedSector> InRange(List<IMergedSector> bands)
+        private List<IMergedSector> InRange(List<IMergedSector> bands) => Cut(bands, FlFrom, FlTo);
+
+        private static List<IMergedSector> Cut(List<IMergedSector> bands, int flFrom, int flTo)
         {
-            if (FlFrom <= 0 && FlTo >= SectorPlanBuilder.NO_UPPER_LIMIT)
+            if (flFrom <= 0 && flTo >= SectorPlanBuilder.NO_UPPER_LIMIT)
                 return bands;
-            return bands.Where(b => b.BottomLevel < FlTo && b.TopLevel > FlFrom)
+            return bands.Where(b => b.BottomLevel < flTo && b.TopLevel > flFrom)
                         .Select(b => (IMergedSector)new CutBand
                         {
                             Name = b.Name,
-                            BottomLevel = Math.Max(b.BottomLevel, FlFrom),
-                            TopLevel = Math.Min(b.TopLevel, FlTo),
-                            OuterRings = b.OuterRings
+                            BottomLevel = Math.Max(b.BottomLevel, flFrom),
+                            TopLevel = Math.Min(b.TopLevel, flTo),
+                            OuterRings = b.OuterRings   // same ring objects: the geometry caches key on them
                         }).ToList();
         }
 
@@ -270,7 +310,12 @@ namespace Projecte1_WPF_.ArcGisMethods
         public void SetOutlines(SectorOutlines outlines)
         {
             _outlines = outlines;
+            // A new data set: the cached geometry belongs to the previous one
+            PlotAirspaces3D.ClearCache();
+            PlotSectorPlan.ClearCache();
+            PlotSectorLabels.ClearCache();
             Clear();
+            WarmUp();
         }
 
         public void Update(DateTime time)

@@ -101,27 +101,51 @@ namespace Projecte1_WPF_.ArcGisMethods
         public void AddMarkers(List<SimEvent> events, TimeSpan life)
         {
             DateTime expires = DateTime.UtcNow + life;
+            var entries = new List<Graphic>();
+            var exits = new List<Graphic>();
             foreach (SimEvent e in events)
             {
-                GraphicsOverlay overlay = e.IsEntry ? _entries : _exits; // exits always on top of entries, whatever the order
-                var g = new Graphic(new MapPoint(e.Longitude, e.Latitude, e.FL * FL_TO_M, SpatialReferences.Wgs84),
-                                    e.IsEntry ? _entrySymbol : _exitSymbol);
-                overlay.Graphics.Add(g);
-                _live.Add((g, overlay, expires));
+                var point = new MapPoint(e.Longitude, e.Latitude, e.FL * FL_TO_M, SpatialReferences.Wgs84);
+                Stack<Graphic> free = e.IsEntry ? _freeEntries : _freeExits;
+                Graphic g;
+                if (free.Count > 0)
+                {
+                    // An expired marker of the same kind, moved and shown again
+                    g = free.Pop();
+                    g.Geometry = point;
+                    g.IsVisible = true;
+                }
+                else
+                {
+                    // exits always on top of entries, whatever the order
+                    g = new Graphic(point, e.IsEntry ? _entrySymbol : _exitSymbol);
+                    (e.IsEntry ? entries : exits).Add(g);
+                }
+                _live.Add((g, e.IsEntry ? _entries : _exits, expires));
             }
+            // One call per overlay instead of one per marker
+            if (entries.Count > 0) _entries.Graphics.AddRange(entries);
+            if (exits.Count > 0) _exits.Graphics.AddRange(exits);
         }
 
         public void RemoveExpiredMarkers()
         {
             DateTime now = DateTime.UtcNow;
-            for (int i = _live.Count - 1; i >= 0; i--)
+            _live.RemoveAll(m =>
             {
-                if (_live[i].Expires > now)
-                    continue;
-                _live[i].Overlay.Graphics.Remove(_live[i].Graphic);
-                _live.RemoveAt(i);
-            }
+                if (m.Expires > now)
+                    return false;
+                // Hidden and kept for the next marker of its kind: taking graphics out of the overlay and putting new
+                // ones in, hundreds a second at high speeds, cost more than everything else in an update
+                m.Graphic.IsVisible = false;
+                (m.Overlay == _entries ? _freeEntries : _freeExits).Push(m.Graphic);
+                return true;
+            });
         }
+
+        // Expired markers, still in their overlay but hidden, waiting to be used again
+        private readonly Stack<Graphic> _freeEntries = new Stack<Graphic>();
+        private readonly Stack<Graphic> _freeExits = new Stack<Graphic>();
 
         public bool IsVisible
         {
@@ -136,9 +160,13 @@ namespace Projecte1_WPF_.ArcGisMethods
 
         public void ClearMarkers()
         {
+            if (_live.Count == 0 && _freeEntries.Count == 0 && _freeExits.Count == 0)
+                return;   // nothing in the overlays (every move of the time bar comes through here)
             _entries.Graphics.Clear();
             _exits.Graphics.Clear();
             _live.Clear();
+            _freeEntries.Clear();
+            _freeExits.Clear();
         }
 
         public void Clear()

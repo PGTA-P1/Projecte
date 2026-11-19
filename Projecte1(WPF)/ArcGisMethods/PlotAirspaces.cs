@@ -84,12 +84,55 @@ namespace Projecte1_WPF_.ArcGisMethods
 
         private readonly string _defaultStatus; // null: single colour (no status)
 
+        // The graphics of each sector and its status, so removing, recolouring and hiding a sector touch only its own
+        // graphics (looking them up by attribute in the whole overlay cost a native call per graphic)
+        private readonly Dictionary<string, List<Graphic>> _byName = new Dictionary<string, List<Graphic>>(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _statusOf = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        // Prism geometry of each band ring, built once (Simplify + geodetic densify, a few ms each) and reused at every
+        // redraw. Key: the ring (same list object while the outlines are the same) and the band's levels. Thread-safe, so
+        // Prepare can fill it in the background
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<(object Ring, int Bottom, int Top), (Polygon Shape, double HeightM)?> _prisms =
+            new System.Collections.Concurrent.ConcurrentDictionary<(object, int, int), (Polygon, double)?>();
+
+        // Forgets the prisms of the previous data set (new outlines)
+        public static void ClearCache() => _prisms.Clear();
+
+        // Builds the prism geometry of these bands ahead of time (any thread)
+        public static void Prepare(IEnumerable<IMergedSector> sectors)
+        {
+            foreach (IMergedSector s in sectors)
+                foreach (var ring in s.OuterRings)
+                    Prism(ring, s.BottomLevel, s.TopLevel);
+        }
+
+        private static (Polygon Shape, double HeightM)? Prism(List<(double Latitude, double Longitude)> ring, int bottomFl, int topFl)
+        {
+            return _prisms.GetOrAdd((ring, bottomFl, topFl), _ =>
+            {
+                double topM = Math.Min(topFl, MAX_VISIBLE_FL) * FL_TO_M;
+                // Ground-level sectors: bottom lifted by the curvature sag so the globe does not hide part of it; top unchanged
+                double bottomM = bottomFl == 0 ? CurvatureSag(ring) : bottomFl * FL_TO_M;
+                var builder = new PolygonBuilder(SpatialReferences.Wgs84);
+                foreach (var v in ring)
+                    builder.AddPoint(new MapPoint(v.Longitude, v.Latitude, bottomM, SpatialReferences.Wgs84));
+                // Simplify fixes ring orientation and self-intersections
+                if (!(GeometryEngine.Simplify(builder.ToGeometry()) is Polygon polygon) || polygon.IsEmpty)
+                    return null;
+                // Densify so long edges follow the Earth's curvature instead of cutting under the surface
+                return (GlobeHelper.Densify(polygon), Math.Max(topM - bottomM, 1));
+            });
+        }
+
         // Recolours every polygon of the sector (only with the status constructor)
         public void SetStatus(string sectorName, string status)
         {
-            foreach (var g in _overlay.Graphics)
-                if ((string)g.Attributes["name"] == sectorName && (string)g.Attributes["status"] != status)
-                    g.Attributes["status"] = status;
+            if (!_byName.TryGetValue(sectorName, out List<Graphic> graphics) ||
+                (_statusOf.TryGetValue(sectorName, out string current) && current == status))
+                return;
+            foreach (Graphic g in graphics)
+                g.Attributes["status"] = status;
+            _statusOf[sectorName] = status;
         }
 
         public async Task PlotAsync(IEnumerable<IMergedSector> sectors, bool zoomTo = true)
@@ -101,39 +144,33 @@ namespace Projecte1_WPF_.ArcGisMethods
             foreach (string name in list.Select(s => s.Name).Distinct())
                 Remove(name);
 
+            var added = new List<Graphic>();
             foreach (var sector in list)
             {
-                double topM = Math.Min(sector.TopLevel, MAX_VISIBLE_FL) * FL_TO_M;
-
                 foreach (var ring in sector.OuterRings)
                 {
-                    // Ground-level sectors: bottom lifted by the curvature sag so the globe does not hide part of it; top unchanged
-                    double bottomM = sector.BottomLevel == 0 ? CurvatureSag(ring) : sector.BottomLevel * FL_TO_M;
-                    double heightM = Math.Max(topM - bottomM, 1);
-
-                    var builder = new PolygonBuilder(SpatialReferences.Wgs84);
-                    foreach (var v in ring)
-                        builder.AddPoint(new MapPoint(v.Longitude, v.Latitude, bottomM, SpatialReferences.Wgs84));
-
-                    // Simplify fixes ring orientation and self-intersections
-                    if (!(GeometryEngine.Simplify(builder.ToGeometry()) is Polygon polygon) || polygon.IsEmpty)
+                    var prism = Prism(ring, sector.BottomLevel, sector.TopLevel);
+                    if (prism == null)
                     {
                         Debug.WriteLine($"[PlotAirspaces3D] '{sector.Name}' skipped: invalid polygon.");
                         continue;
                     }
-
-                    // Densify so long edges follow the Earth's curvature instead of cutting under the surface
-                    var graphic = new Graphic(GlobeHelper.Densify(polygon));
-                    graphic.Attributes["height"] = heightM;
+                    var graphic = new Graphic(prism.Value.Shape);
+                    graphic.Attributes["height"] = prism.Value.HeightM;
                     graphic.Attributes["name"] = sector.Name;
                     if (_defaultStatus != null)
                         graphic.Attributes["status"] = _defaultStatus;
-                    _overlay.Graphics.Add(graphic);
-                    plotted.Add(polygon);
+                    added.Add(graphic);
+                    if (!_byName.TryGetValue(sector.Name, out List<Graphic> mine))
+                        _byName[sector.Name] = mine = new List<Graphic>();
+                    mine.Add(graphic);
+                    if (_defaultStatus != null)
+                        _statusOf[sector.Name] = _defaultStatus;
+                    if (zoomTo)
+                        plotted.Add(prism.Value.Shape);
                 }
             }
-
-            Debug.WriteLine($"[PlotAirspaces3D] {plotted.Count} polygons added, {_overlay.Graphics.Count} on screen.");
+            _overlay.Graphics.AddRange(added);
 
             if (zoomTo && plotted.Count > 0)
             {
@@ -161,18 +198,28 @@ namespace Projecte1_WPF_.ArcGisMethods
         // Shows or hides every polygon of the sector (selection on the map / sector list)
         public void SetVisible(string sectorName, bool visible)
         {
-            foreach (var g in _overlay.Graphics)
-                if ((string)g.Attributes["name"] == sectorName && g.IsVisible != visible)
-                    g.IsVisible = visible;
+            if (_byName.TryGetValue(sectorName, out List<Graphic> graphics))
+                foreach (Graphic g in graphics)
+                    if (g.IsVisible != visible)
+                        g.IsVisible = visible;
         }
 
         public void Remove(string sectorName)
         {
-            foreach (var g in _overlay.Graphics.Where(g => (string)g.Attributes["name"] == sectorName).ToList())
+            if (!_byName.TryGetValue(sectorName, out List<Graphic> graphics))
+                return;
+            foreach (Graphic g in graphics)
                 _overlay.Graphics.Remove(g);
+            _byName.Remove(sectorName);
+            _statusOf.Remove(sectorName);
         }
 
-        public void Clear() => _overlay.Graphics.Clear();
+        public void Clear()
+        {
+            _overlay.Graphics.Clear();
+            _byName.Clear();
+            _statusOf.Clear();
+        }
 
         public bool IsVisible
         {

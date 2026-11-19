@@ -26,8 +26,23 @@ namespace Projecte1_WPF_
             public string Path { get; private set; }
             public string SourceName { get; private set; }
             public FileState State { get; private set; } = FileState.Missing;
-            public string Message { get; private set; } = "Missing: add it or use the default one";
+            public string Message { get; private set; } = "Missing: add it";
             public int Version;   // a newer file replaces the result of a check still running
+
+            // Skip mode (button "Skip that …" on a row with an error): the file is read leaving out what each bad line
+            // belongs to. Skippable = the last check failed in a way the skip mode may get past
+            public bool Skip { get; set; }
+            public bool Skippable { get; set; }
+
+            // The whole error, or the list of what was skipped; the row shows a short line and "Details…"
+            public string Details { get; set; }
+
+            // "Use default" only on the traffic row (the other files depend on each other, so a default one mixed in
+            // mostly mismatches; the traffic is independent)
+            public Visibility UseDefaultVisibility => Info.Role == DataRole.Trajectories ? Visibility.Visible : Visibility.Collapsed;
+            public Visibility DetailsVisibility => Details != null && State != FileState.Checking ? Visibility.Visible : Visibility.Collapsed;
+            public Visibility SkipVisibility => State == FileState.Error && Skippable && !Skip ? Visibility.Visible : Visibility.Collapsed;
+            public string SkipText => "Skip that " + Skips.Unit(Info.Role);
 
             public string FileText => Path == null ? "(no file)" : SourceName + (IsDefault ? "  (default)" : "");
             public bool IsDefault => Path != null && string.Equals(Path, DataFiles.DefaultPath(Info.Role), StringComparison.OrdinalIgnoreCase);
@@ -68,7 +83,7 @@ namespace Projecte1_WPF_
             if (previous != null)
                 foreach (FileRow row in _rows)
                     if (previous[row.Info.Role] != null && File.Exists(previous[row.Info.Role]))
-                        _ = CheckAsync(row, previous[row.Info.Role], previous.SourceName(row.Info.Role), copy: false);
+                        _ = CheckAsync(row, previous[row.Info.Role], previous.SourceName(row.Info.Role), copy: false, skip: previous.SkipBad.Contains(row.Info.Role), popup: false);
             UpdateSummary();
         }
 
@@ -186,44 +201,89 @@ namespace Projecte1_WPF_
             NotesBox.Visibility = Visibility.Collapsed;
         }
 
-        // Copies the file in (unless it is a default or already a copy) and reads it with its reader in the background
-        private async Task CheckAsync(FileRow row, string source, string name, bool copy)
+        // The button of a row with an error: read the same file again leaving out what the bad lines belong to
+        private void Skip_Click(object sender, RoutedEventArgs e)
+        {
+            var row = (FileRow)((FrameworkElement)sender).Tag;
+            if (row.Path != null)
+                _ = CheckAsync(row, row.Path, row.SourceName, copy: false, skip: true);
+        }
+
+        // "Details…" of a row: the whole error, or the whole list of what was skipped (the row only has a short line)
+        private void Details_Click(object sender, RoutedEventArgs e)
+        {
+            var row = (FileRow)((FrameworkElement)sender).Tag;
+            if (row.Details != null)
+                ShowDetails(row);
+        }
+
+        private void ShowDetails(FileRow row)
+        {
+            MessageBox.Show(this, row.Details, row.SourceName, MessageBoxButton.OK,
+                            row.State == FileState.Error ? MessageBoxImage.Error : MessageBoxImage.Information);
+        }
+
+        private static string Short(string text, int length) => text.Length <= length ? text : text.Substring(0, length - 1) + "…";
+
+        // Copies the file in (unless it is a default or already a copy) and reads it with its reader in the background.
+        // skip: skip mode. The row gets one short line; the whole error (or the list of what was skipped) is its Details,
+        // shown in a pop-up: at once for an error when the user has just added the file (popup), later with "Details…"
+        private async Task CheckAsync(FileRow row, string source, string name, bool copy, bool skip = false, bool popup = true)
         {
             int version = ++row.Version;
+            row.Skip = skip;
+            row.Skippable = false;
+            row.Details = null;
+            List<string> skipped = skip ? new List<string>() : null;
             row.Set(row.Path, row.SourceName, FileState.Checking, copy ? "Copying and checking…" : "Checking…");
             UpdateSummary();
             string path = source;
             FileState state;
-            string message;
+            string message, details = null;
             try
             {
                 if (copy)
                     path = await Task.Run(() => UserDataFolder.CopyIn(row.Info.Role, source));
                 if (version != row.Version) return;
                 row.Set(path, name, FileState.Checking, "Checking…");
-                message = await Task.Run(() => DataFiles.Check(row.Info.Role, path));
+                message = await Task.Run(() => DataFiles.Check(row.Info.Role, path, skipped));
+                if (skipped != null && skipped.Count > 0)
+                {
+                    details = $"{message}\n\nLeft out ({skipped.Count}):\n" + string.Join("\n", skipped.Take(25).Select(s => "• " + s)) +
+                              (skipped.Count > 25 ? $"\n… and {skipped.Count - 25} more" : "");
+                    message += $" · {skipped.Count} skipped";
+                }
                 state = FileState.Ok;
             }
             catch (DataFileException ex)
             {
                 state = FileState.Error;
+                row.Skippable = Skips.Supports(row.Info.Role);
+                message = Short((ex.LineNumber > 0 ? $"Line {ex.LineNumber:N0}: " : "") + ex.Problem, 110);
                 // The error names the session copy; show the name the user knows
-                message = ex.Message.Replace(System.IO.Path.GetFileName(ex.FilePath) ?? "", name);
+                details = ex.Message.Replace(System.IO.Path.GetFileName(ex.FilePath) ?? "", name) + "\n\n" +
+                          (row.Skippable ? $"Replace the file, or press \"Skip that {Skips.Unit(row.Info.Role)}\" to read it without that one."
+                                         : "Replace the file.");
             }
             catch (IOException ex)
             {
                 state = FileState.Error;
-                message = $"cannot be read: {ex.Message}";
+                message = Short($"Cannot be read: {ex.Message}", 110);
+                details = $"{name} cannot be read:\n{ex.Message}";
             }
             catch (UnauthorizedAccessException ex)
             {
                 state = FileState.Error;
-                message = $"no permission to read it: {ex.Message}";
+                message = "No permission to read it";
+                details = $"No permission to read {name}:\n{ex.Message}";
             }
             if (version != row.Version)
                 return; // another file was chosen meanwhile
+            row.Details = details;
             row.Set(path, name, state, message);
             UpdateSummary();
+            if (state == FileState.Error && popup && details != null)
+                ShowDetails(row);
         }
 
         private void UpdateSummary()
@@ -235,7 +295,7 @@ namespace Projecte1_WPF_
             LoadBTN.IsEnabled = _rows.All(r => r.State == FileState.Ok);
             var parts = new List<string>();
             if (errors.Count > 0)
-                parts.Add($"{errors.Count} with errors ({string.Join(", ", errors.Select(r => r.Info.Title))}): replace them or use the defaults.");
+                parts.Add($"{errors.Count} with errors ({string.Join(", ", errors.Select(r => r.Info.Title))}): replace them.");
             if (missing.Count > 0)
                 parts.Add($"{missing.Count} missing ({string.Join(", ", missing.Select(r => r.Info.Title))}).");
             if (checking > 0)
@@ -248,7 +308,11 @@ namespace Projecte1_WPF_
         {
             var files = new DataFiles();
             foreach (FileRow row in _rows)
+            {
                 files.Set(row.Info.Role, row.Path, row.SourceName);
+                if (row.Skip)
+                    files.SkipBad.Add(row.Info.Role);
+            }
             Files = files;
             DialogResult = true;
         }

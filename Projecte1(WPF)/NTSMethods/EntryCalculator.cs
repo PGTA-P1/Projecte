@@ -177,22 +177,33 @@ namespace Projecte1_WPF_.NTS
                     if (inside.TryGetValue(es, out List<Interval> iv))
                         all.AddRange(iv);
                 List<Interval> stays = Interval.Merge(all, Interval.TOUCH);
-                if (p.ReentryTime > 0)
-                    stays = Interval.Merge(stays, TimeSpan.FromSeconds(p.ReentryTime));
+                var everOpen = new bool[stays.Count];
 
-                foreach (Interval stay in stays)
+                // The real stays are clipped to each open period FIRST and the reentry time joins the pieces inside that
+                // period only. Joining before clipping put an entry at the opening time (or an exit at the closing time)
+                // of a flight that was outside at that moment, in the gap between two stays joined by a long reentry time
+                foreach (OpenPeriod period in periods)
                 {
-                    bool open = false;
-                    foreach (OpenPeriod period in periods)
+                    var pieces = new List<Interval>();
+                    bool insideAtOpening = false; // the flight was inside when the sector opened
+                    for (int i = 0; i < stays.Count; i++)
                     {
                         // Part of the stay in which the sector is open
-                        DateTime start = stay.Start > period.Start ? stay.Start : period.Start;
-                        DateTime end = stay.End < period.End ? stay.End : period.End;
+                        DateTime start = stays[i].Start > period.Start ? stays[i].Start : period.Start;
+                        DateTime end = stays[i].End < period.End ? stays[i].End : period.End;
                         if (end <= start)
                             continue;
-                        open = true;
+                        everOpen[i] = true;
+                        if (stays[i].Start < period.Start)
+                            insideAtOpening = true;
+                        pieces.Add(new Interval(start, end));
+                    }
+                    if (p.ReentryTime > 0)
+                        pieces = Interval.Merge(pieces, TimeSpan.FromSeconds(p.ReentryTime));
 
-                        if ((end - start).TotalSeconds < p.MinTimeInSector) { Interlocked.Increment(ref _piecesTooShort); continue; }
+                    foreach (Interval piece in pieces)
+                    {
+                        if (piece.Seconds < p.MinTimeInSector) { Interlocked.Increment(ref _piecesTooShort); continue; }
 
                         entries.Add(new SectorEntry
                         {
@@ -200,16 +211,17 @@ namespace Projecte1_WPF_.NTS
                             CallSign = trajectory.CallSign,
                             Level = EntryLevel.Open,
                             // Open when the flight crossed in -> real crossing; opened while the flight was inside -> Opened
-                            Cause = period.Start <= stay.Start ? EntryCause.Crossing : EntryCause.Opened,
+                            Cause = insideAtOpening && piece.Start == period.Start ? EntryCause.Opened : EntryCause.Crossing,
                             Sector = sector,
                             Acc = period.Acc,
-                            Configuration = _scheme.GetConfigurationName(period.Acc, start),
-                            Entry = start,
-                            Exit = end
+                            Configuration = _scheme.GetConfigurationName(period.Acc, piece.Start),
+                            Entry = piece.Start,
+                            Exit = piece.End
                         });
                     }
-                    if (!open) Interlocked.Increment(ref _staysNeverOpen);
                 }
+                foreach (bool open in everOpen)
+                    if (!open) Interlocked.Increment(ref _staysNeverOpen);
             }
 
             return entries;

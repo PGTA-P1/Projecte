@@ -12,7 +12,7 @@
         </Style>
         <Style x:Key="Small" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11" />
-            <Setter Property="Foreground" Value="#FF606060" />
+            <Setter Property="Foreground" Value="#FF5E6A70" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
         <!-- Flat icon buttons of the header (export, pause at closing, close); a pressed toggle is light blue -->
@@ -23,7 +23,7 @@
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
             <Setter Property="FontSize" Value="13" />
-            <Setter Property="Foreground" Value="#FF34495E" />
+            <Setter Property="Foreground" Value="#FF3C474D" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ButtonBase">
@@ -32,15 +32,15 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Face" Property="Background" Value="#FFDCE7F3" />
+                                <Setter TargetName="Face" Property="Background" Value="#FFDCEBE9" />
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Face" Property="BorderBrush" Value="#FF0B3D80" />
+                                <Setter TargetName="Face" Property="BorderBrush" Value="#FF0E3B39" />
                             </Trigger>
                             <Trigger Property="ToggleButton.IsChecked" Value="True">
-                                <Setter TargetName="Face" Property="Background" Value="#FFC9DCF3" />
-                                <Setter TargetName="Face" Property="BorderBrush" Value="#FF1F6FD1" />
-                                <Setter Property="Foreground" Value="#FF1F6FD1" />
+                                <Setter TargetName="Face" Property="Background" Value="#FFCFE3E1" />
+                                <Setter TargetName="Face" Property="BorderBrush" Value="#FF1F6E6B" />
+                                <Setter Property="Foreground" Value="#FF1F6E6B" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -51,27 +51,27 @@
         <Style x:Key="Switch" TargetType="ToggleButton">
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="#FF34495E" />
+            <Setter Property="Foreground" Value="#FF3C474D" />
             <Setter Property="HorizontalAlignment" Value="Left" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
                         <StackPanel Orientation="Horizontal" Background="Transparent">
-                            <Border x:Name="Track" Width="28" Height="16" CornerRadius="8" Background="#FFC9D3DE" VerticalAlignment="Center">
+                            <Border x:Name="Track" Width="28" Height="16" CornerRadius="8" Background="#FFD5DBD8" VerticalAlignment="Center">
                                 <Ellipse x:Name="Knob" Width="12" Height="12" Fill="White" HorizontalAlignment="Left" Margin="2,0" />
                             </Border>
                             <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" />
                         </StackPanel>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Track" Property="Background" Value="#FF1F6FD1" />
+                                <Setter TargetName="Track" Property="Background" Value="#FF1F6E6B" />
                                 <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Track" Property="Opacity" Value="0.85" />
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Track" Property="BorderBrush" Value="#FF0B3D80" />
+                                <Setter TargetName="Track" Property="BorderBrush" Value="#FF0E3B39" />
                                 <Setter TargetName="Track" Property="BorderThickness" Value="1.5" />
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -80,12 +80,12 @@
             </Setter>
         </Style>
     </UserControl.Resources>
-    <Border BorderBrush="#FFD5DFE5" BorderThickness="1,0,0,0">
+    <Border BorderBrush="#FFE1E5E3" BorderThickness="1,0,0,0">
         <DockPanel ToolTipService.InitialShowDelay="300" ToolTipService.ShowDuration="20000">
             <!-- Header: name; icon buttons: export the sector to Excel, pause when it closes (on = pressed), close -->
-            <Grid DockPanel.Dock="Top" Background="#FFEEF5FD">
+            <Grid DockPanel.Dock="Top" Background="#FFF7F8F7">
                 <StackPanel Margin="12,8,72,8">
-                    <TextBlock x:Name="NameText" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock x:Name="NameText" FontSize="28" FontWeight="Bold" FontFamily="pack://application:,,,/Fonts/#Archivo Condensed" />
                     <TextBlock x:Name="KindText" Style="{StaticResource Small}" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,8,0">
@@ -101,7 +101,7 @@
                     <TextBlock x:Name="InfoText" Style="{StaticResource Small}" Margin="0,4,0,0" />
 
                     <!-- Now: configuration, window, demand against capacity -->
-                    <Border x:Name="NowBox" Margin="0,8,0,0" Padding="8,6" CornerRadius="5" Background="#FFF6F8FB" BorderBrush="#FFD5DFE5" BorderThickness="1">
+                    <Border x:Name="NowBox" Margin="0,8,0,0" Padding="8,6" CornerRadius="5" Background="#FFF4F6F5" BorderBrush="#FFE1E5E3" BorderThickness="1">
                         <StackPanel>
                             <TextBlock x:Name="NowTitle" FontWeight="SemiBold" />
                             <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
@@ -112,7 +112,7 @@
                             </StackPanel>
                             <!-- What playback does when this sector closes, said in words (it used to be a bare pause icon
                                  in the header) -->
-                            <Border BorderBrush="#FFE1E8EE" BorderThickness="0,1,0,0" Margin="0,7,0,0" Padding="0,6,0,0">
+                            <Border BorderBrush="#FFE1E5E3" BorderThickness="0,1,0,0" Margin="0,7,0,0" Padding="0,6,0,0">
                                 <ToggleButton x:Name="PauseToggle" Style="{StaticResource Switch}" IsChecked="True"
                                               AutomationProperties.Name="Pause playback when this sector closes"
                                               ToolTip="On: playback stops at the moment this sector closes, so you see it happen; press Play to go on. Off: playback goes on and the map shows all the sectors until it opens again. Either way a short notice appears."
@@ -134,7 +134,7 @@
                             <TextBlock Text=" entries in the window" Style="{StaticResource Small}" />
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,10,0">
-                            <Rectangle Width="14" Height="2" Fill="#FF2C3E50" VerticalAlignment="Center" />
+                            <Rectangle Width="14" Height="2" Fill="#FF1F2A30" VerticalAlignment="Center" />
                             <TextBlock Text=" aircraft inside" Style="{StaticResource Small}" />
                         </StackPanel>
                         <StackPanel Orientation="Horizontal">

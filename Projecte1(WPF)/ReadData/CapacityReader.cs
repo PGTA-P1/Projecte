@@ -1,4 +1,4 @@
-﻿using Projecte1_WPF_.Classes;
+using Projecte1_WPF_.Classes;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -11,8 +11,9 @@ namespace Projecte1_WPF_.ReadData
         private const string FORMAT = "'Sector;Capacity'";
 
         // keep: if not null, only the sectors whose name is in the set are stored (null = load everything).
-        // Throws DataFileException (file, line, what is wrong) on the first line that does not follow the format
-        public CapacityFile Read(string filePath, HashSet<string> keep = null)
+        // Throws DataFileException (file, line, what is wrong) on the first line that does not follow the format.
+        // skipped: if not null (skip mode), a bad line is left out and noted there instead (that sector gets no limit)
+        public CapacityFile Read(string filePath, HashSet<string> keep = null, List<string> skipped = null)
         {
             if (!File.Exists(filePath))
                 throw new DataFileException(filePath, "the file does not exist");
@@ -37,20 +38,27 @@ namespace Projecte1_WPF_.ReadData
                         continue;
                 }
 
-                var p = new LineParser(filePath, lineNumber, rawLine);
-                var parts = p.Fields(';', 2, FORMAT);
-                string sector = parts[0].Trim();
-                if (sector.Length == 0)
-                    throw p.Error("the sector name (1st field) is empty");
-                double capacity = p.Double(parts[1].Trim(), "the hourly capacity (2nd field)");
-                if (capacity < 0)
-                    throw p.Error($"the hourly capacity cannot be negative, found {parts[1].Trim()}");
-                found++;
+                try
+                {
+                    var p = new LineParser(filePath, lineNumber, rawLine);
+                    var parts = p.Fields(';', 2, FORMAT);
+                    string sector = parts[0].Trim();
+                    if (sector.Length == 0)
+                        throw p.Error("the sector name (1st field) is empty");
+                    double capacity = p.Double(parts[1].Trim(), "the hourly capacity (2nd field)");
+                    if (capacity < 0)
+                        throw p.Error($"the hourly capacity cannot be negative, found {parts[1].Trim()}");
+                    found++;
 
-                if (keep != null && !keep.Contains(sector))
-                    continue; // sector not needed
+                    if (keep != null && !keep.Contains(sector))
+                        continue; // sector not needed
 
-                result.Capacities.Add(new CapacityRecord { SectorName = sector, HourlyCapacity = capacity });
+                    result.Capacities.Add(new CapacityRecord { SectorName = sector, HourlyCapacity = capacity });
+                }
+                catch (DataFileException ex) when (skipped != null)
+                {
+                    Skips.Add(skipped, ex, "line skipped (that sector has no limit)");
+                }
             }
 
             if (found == 0)

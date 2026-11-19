@@ -22,10 +22,10 @@ namespace Projecte1_WPF_.Simulation
     // DEMAND (slides "Demand"): entries into each open sector counted in an integration window [start, start + window),
     // recomputed every sliding step, and compared with the capacity in that window. Capacity file values are per hour,
     // so the capacity of a window = hourly capacity x window / 60 min. Capacity 999 or no capacity = no limit (green).
-    // Windows start on the clock (00:00 UTC + k step). At time t the window shown is the earliest one that still contains
-    // t, but never one starting before the simulation: first [s0, s0 + window) with s0 = Start rounded down to the step,
-    // then, once it ends, each later window in turn, e.g. window 20, step 5: 10:00-10:20, at 10:20 10:05-10:25, at 10:25
-    // 10:10-10:30
+    // Windows start on the clock (00:00 UTC + k step). At time t the window shown is the one starting at t rounded down
+    // to the step (the entries of the next 'window' minutes, as the reference GUI), the first one being [s0, s0 + window)
+    // with s0 = Start rounded down to the step, e.g. window 20, step 5: at 10:00 10:00-10:20, at 10:05 10:05-10:25, at
+    // 10:10 10:10-10:30
     public class SectorDemand
     {
         // Demand / capacity from which a sector is near its limit (yellow)
@@ -72,16 +72,13 @@ namespace Projecte1_WPF_.Simulation
                 _hourly[c.SectorName] = c.HourlyCapacity;
         }
 
-        // Window shown at time t: the earliest window [start, start + window) that contains t, the first one at most
+        // Window shown at time t: the one that starts at t rounded down to the step, [start, start + window), as the
+        // reference GUI of the assignment (at 10:00 with window 60: 10:00-11:00). Never before the first window
         public (DateTime Start, DateTime End) WindowAt(DateTime t)
         {
             DateTime start = _firstStart;
-            if (t >= _firstStart + _window)
-            {
-                // Earliest grid start s with t < s + window, i.e. s > t - window
-                long k = (t - _window - _firstStart).Ticks / _step.Ticks + 1;
-                start = _firstStart + TimeSpan.FromTicks(k * _step.Ticks);
-            }
+            if (t > _firstStart)
+                start = _firstStart + TimeSpan.FromTicks((t - _firstStart).Ticks / _step.Ticks * _step.Ticks);
             return (start, start + _window);
         }
 

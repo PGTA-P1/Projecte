@@ -18,8 +18,8 @@ namespace Projecte1_WPF_
 
 
         // Timeline line: thin and half transparent, so it marks the time without hiding the data
-        private static readonly Brush SubtleCursor = Charts.Frozen(0x1F, 0x6F, 0xD1, 0x70);
-        private static readonly Brush HoverGuide = Charts.Frozen(0x8A, 0x97, 0xA6, 0xA0);
+        private static readonly Brush SubtleCursor = Charts.Frozen(0x1F, 0x6E, 0x6B, 0x70);
+        private static readonly Brush HoverGuide = Charts.Frozen(0x9A, 0xA3, 0xA6, 0xA0);
 
         // Heat map: pixels per sample and per sector row; height of the time axis on top; width of the labels
         private const double ROW_H = 11, AXIS_H = 20, LABEL_W = 140;
