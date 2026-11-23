@@ -3,8 +3,10 @@
 #   2. packs it with Inno Setup (ISCC.exe)
 # Needs: the .NET 8 SDK, Inno Setup 6 (winget install JRSoftware.InnoSetup) and Projecte1(WPF)\arcgis.keys.dat (the
 # scrambled keys, in the repository), which the setup includes so the map works without anyone generating a key.
-# Run from anywhere:  powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1
+# Run from anywhere:  powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1 [-Version 1.0]
+# GitHub builds and publishes it by itself when a tag v* is pushed (.github\workflows\release.yml).
 
+param([string]$Version = '1.0')
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $root = Split-Path $here -Parent
@@ -30,7 +32,7 @@ if (-not (Test-Path (Join-Path $publish 'arcgis.keys.dat'))) { throw 'arcgis.key
 Remove-Item (Join-Path $publish 'arcgis.keys.json') -ErrorAction SilentlyContinue
 
 Write-Host 'Building the setup...'
-& $iscc "/DPublishDir=$publish" (Join-Path $here 'ProjecteP1.iss')
+& $iscc "/DPublishDir=$publish" "/DAppVersion=$Version" (Join-Path $here 'ProjecteP1.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed' }
 
 $setup = Join-Path $here 'output\ProjecteP1-setup.exe'

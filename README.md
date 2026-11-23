@@ -4,11 +4,19 @@ PGTA Project 1. A Windows desktop app (WPF, .NET 8) that reads EUROCONTROL-style
 
 Workflow: load the files, compute the entries, calculate the demand, compare it with the capacity, watch it over time.
 
+<p align="center">
+  <a href="https://github.com/PGTA-P1/Projecte/releases/latest/download/ProjecteP1-setup.exe">
+    <img src="https://img.shields.io/badge/Download_for_Windows-ProjecteP1--setup.exe-1F6E6B?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows: ProjecteP1-setup.exe">
+  </a>
+  <br>
+  <sub>Windows 10/11, 64-bit · no .NET or key needed · <a href="https://github.com/PGTA-P1/Projecte/releases/latest">all releases</a></sub>
+</p>
+
 ![The Spanish ACCs on the 3D globe at 09:50 on 28/07/2016, coloured by load, with the sector list sorted by load](docs/images/main-3d.jpg)
 
 ## Install (recommended)
 
-1. Download **ProjecteP1-setup.exe** from the [Releases page](https://github.com/PGTA-P1/Projecte/releases/latest).
+1. Download **[ProjecteP1-setup.exe](https://github.com/PGTA-P1/Projecte/releases/latest/download/ProjecteP1-setup.exe)** (the button above, or the [Releases page](https://github.com/PGTA-P1/Projecte/releases/latest)).
 2. Run it. The setup is not signed, so Windows may show "Windows protected your PC": click **More info > Run anyway**.
 3. Start **Projecte P1** from the Start menu.
 
@@ -30,7 +38,12 @@ Or open `Projecte 1.sln` in Visual Studio and press F5.
 
 **Map key.** The ArcGIS licence string and API key (both free) are in the repository, scrambled in `Projecte1(WPF)/arcgis.keys.dat`, so a clone works as it is. To use other keys, write them in `Projecte1(WPF)/arcgis.keys.json` as `{ "License": "...", "ApiKey": "..." }` (Git ignores this file and the app prefers it), then run `installer/scramble-keys.ps1` to update the `.dat`.
 
-**Installer.** `installer/build-installer.ps1` publishes the app with .NET included and builds `installer/output/ProjecteP1-setup.exe` with [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`).
+**Installer.** `installer/build-installer.ps1` publishes the app with .NET included and builds `installer/output/ProjecteP1-setup.exe` with [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`). To publish a new version, push a tag: GitHub then builds the setup and creates the release by itself (`.github/workflows/release.yml`).
+
+```bash
+git tag v1.1
+git push origin v1.1
+```
 
 ## Using the app
 
@@ -115,6 +128,7 @@ Projecte1(WPF)/
   Assets/, Fonts/  app logo and the Archivo font (SIL Open Font License)
   arcgis.keys.dat  ArcGIS licence and API key, scrambled (ArcGisKeys.cs reads it)
 installer/         Inno Setup script, build-installer.ps1, scramble-keys.ps1
+.github/workflows/ release.yml: builds and publishes the setup when a v* tag is pushed
 docs/images/       the screenshots of this README
   MainWindow.xaml  main window; SectorPanel, ComparePanel, AnalysisWindow, DataFilesWindow
   mainProgram.cs   loading and entry computation

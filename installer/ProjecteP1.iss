@@ -3,7 +3,9 @@
 ; shortcut and an uninstaller. It contains .NET (self-contained build) and the ArcGIS keys file.
 
 #define AppName "Projecte P1"
-#define AppVersion "1.0"
+#ifndef AppVersion
+  #define AppVersion "1.0"
+#endif
 #define AppExe "Projecte1(WPF).exe"
 #ifndef PublishDir
   #define PublishDir "publish"
