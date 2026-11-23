@@ -20,9 +20,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up .NET 8
+        id: dotnet
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
+      # The runner also has newer SDKs, and dotnet picks the newest: with it the Windows projection of
+      # net8.0-windows10.0.19041.0 generates unsafe code and the build fails. Build with the .NET 8 SDK, as on our PCs
+      # (pinned here only, so nobody's local setup is affected)
+      - name: Use the .NET 8 SDK
+        run: dotnet new globaljson --sdk-version ${{ steps.dotnet.outputs.dotnet-version }} --force
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
