@@ -206,7 +206,7 @@ namespace Projecte1_WPF_
             bool loadDefaultInstead = false;   // the user's answer when the files do not match
             try
             {
-                ShowProgress(files.IsDefault ? "Loading the files of the Archives folder..." : "Loading your files...", null);
+                ShowProgress(files.IsDefault ? "Loading the default data..." : "Loading your files...", null);
                 await Task.Run(() => _program.LoadFiltered(files));
 
                 // The files read well but do not fully match each other (e.g. the opening scheme opens configurations the
@@ -449,7 +449,7 @@ namespace Projecte1_WPF_
                 ("Integration window (min)", _program.DemandParameters.WindowMinutes.ToString(inv) + ", half-open [start, end)"),
                 ("Sliding step (min)", _program.DemandParameters.StepMinutes.ToString(inv)),
                 ("Capacity per window", "hourly capacity x window / 60; overload = demand above it"),
-                ("Data", _program.Files == null || _program.Files.IsDefault ? "default files (Archives folder)" : "your own files"),
+                ("Data", _program.Files == null || _program.Files.IsDefault ? "default data" : "your own files"),
                 ("Traffic file", _program.Files?.SourceName(DataRole.Trajectories) ?? ""),
                 ("Exported", DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss", inv) + " UTC"),
             };

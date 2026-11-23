@@ -19,7 +19,7 @@
                 <Button Content="_Add files…" Padding="12,3" Click="AddFiles_Click" ToolTip="Pick one or more data files (or .zip files)" />
                 <Button Content="Add ._zip…" Padding="12,3" Margin="8,0,0,0" Click="AddZip_Click" ToolTip="Pick a .zip with the data files (folders inside are fine)" />
                 <Button x:Name="UseDefaultsBTN" Content="Use defaults for the missing ones" Padding="12,3" Margin="8,0,0,0" Click="UseDefaults_Click"
-                        ToolTip="Every input without a file takes the default one of the Archives folder" />
+                        ToolTip="Every input without a file takes the default one" />
             </StackPanel>
             <!-- What happened with the last files added: unknown types, duplicates (amber) -->
             <Border x:Name="NotesBox" Visibility="Collapsed" Background="#FFFFF6DD" BorderBrush="#FFE8C770" BorderThickness="1" CornerRadius="4" Padding="8,5" Margin="0,0,0,8">
@@ -71,7 +71,7 @@
                                             ToolTip="Choose the file for this input (it replaces the current one)" />
                                     <!-- Only for the traffic: it does not depend on the other files, so the default one never mismatches -->
                                     <Button Content="Use default" Padding="10,2" Margin="6,0,0,0" Click="UseDefault_Click" Tag="{Binding}" Visibility="{Binding UseDefaultVisibility}"
-                                            ToolTip="Take the default traffic file of the Archives folder" />
+                                            ToolTip="Take the default traffic file" />
                                 </StackPanel>
                             </Grid>
                         </Border>

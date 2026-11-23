@@ -14,7 +14,7 @@ Workflow: load the files, compute the entries, calculate the demand, compare it 
 
 It installs for your user only (no administrator rights), includes everything it needs (.NET and the map key) and can be removed from Windows Settings > Apps. It needs Windows 10 or 11 (64-bit) and an internet connection for the map imagery.
 
-The app opens with an empty globe. Choose **Load Data > Default data (Archives folder)**; about 10 seconds later the sectors, the timeline and the menus appear.
+The app opens with an empty globe. Choose **Load Data > Default data**; about 10 seconds later the sectors, the timeline and the menus appear.
 
 ## Building from source
 

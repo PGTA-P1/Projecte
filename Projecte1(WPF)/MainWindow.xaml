@@ -334,7 +334,7 @@
             <Rectangle Width="1" Height="18" Fill="#FFE1E5E3" Margin="6,0" VerticalAlignment="Center" />
             <Menu Background="Transparent" VerticalAlignment="Center">
                 <MenuItem Header="Load Data" Padding="4,2">
-                    <MenuItem x:Name="DefaultDataItem" Header="Default data (Archives folder)" Click="LoadDefaultData_Click"/>
+                    <MenuItem x:Name="DefaultDataItem" Header="Default data" Click="LoadDefaultData_Click"/>
                     <Separator Opacity="0.4" Margin="0,1"/>
                     <MenuItem x:Name="OwnFilesItem" Header="Your own files..." Click="OwnFiles_Click"
                               ToolTip="Choose your own input files (one by one or a .zip); each is checked before loading"/>
