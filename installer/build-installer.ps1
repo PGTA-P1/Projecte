@@ -4,7 +4,7 @@
 # Needs: the .NET 8 SDK, Inno Setup 6 (winget install JRSoftware.InnoSetup) and Projecte1(WPF)\arcgis.keys.dat (the
 # scrambled keys, in the repository), which the setup includes so the map works without anyone generating a key.
 # Run from anywhere:  powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1 [-Version 1.0]
-# GitHub builds and publishes it by itself when a tag v* is pushed (.github\workflows\release.yml).
+# Publish it by attaching installer\output\ProjecteP1-setup.exe to a GitHub release (keep that file name).
 
 param([string]$Version = '1.0')
 $ErrorActionPreference = 'Stop'

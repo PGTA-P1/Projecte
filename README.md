@@ -38,12 +38,7 @@ Or open `Projecte 1.sln` in Visual Studio and press F5.
 
 **Map key.** The ArcGIS licence string and API key (both free) are in the repository, scrambled in `Projecte1(WPF)/arcgis.keys.dat`, so a clone works as it is. To use other keys, write them in `Projecte1(WPF)/arcgis.keys.json` as `{ "License": "...", "ApiKey": "..." }` (Git ignores this file and the app prefers it), then run `installer/scramble-keys.ps1` to update the `.dat`.
 
-**Installer.** `installer/build-installer.ps1` publishes the app with .NET included and builds `installer/output/ProjecteP1-setup.exe` with [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`). To publish a new version, push a tag: GitHub then builds the setup and creates the release by itself (`.github/workflows/release.yml`).
-
-```bash
-git tag v1.1
-git push origin v1.1
-```
+**Installer.** `installer/build-installer.ps1` publishes the app with .NET included and builds `installer/output/ProjecteP1-setup.exe` with [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`). To publish a new version, create a release on GitHub (Releases > Draft a new release, with a new tag such as `v1.1`) and attach that file, named exactly `ProjecteP1-setup.exe` so the download button finds it.
 
 ## Using the app
 
@@ -127,9 +122,7 @@ Projecte1(WPF)/
   Archives/        default data files
   Assets/, Fonts/  app logo and the Archivo font (SIL Open Font License)
   arcgis.keys.dat  ArcGIS licence and API key, scrambled (ArcGisKeys.cs reads it)
-installer/         Inno Setup script, build-installer.ps1, scramble-keys.ps1
-.github/workflows/ release.yml: builds and publishes the setup when a v* tag is pushed
-docs/images/       the screenshots of this README
+installer/         Inno Setup script, build-installer.ps1, scramble-keys.ps1docs/images/       the screenshots of this README
   MainWindow.xaml  main window; SectorPanel, ComparePanel, AnalysisWindow, DataFilesWindow
   mainProgram.cs   loading and entry computation
 ```
