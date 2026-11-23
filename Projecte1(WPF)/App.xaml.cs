@@ -1,4 +1,4 @@
-using Esri.ArcGISRuntime;
+﻿using Esri.ArcGISRuntime;
 using Esri.ArcGISRuntime.Http;
 using Esri.ArcGISRuntime.Mapping;
 using Esri.ArcGISRuntime.Security;
@@ -35,20 +35,28 @@ namespace Projecte1_WPF_
 
             try
             {
-                // Initialize the ArcGIS Maps SDK runtime before any components are created.
-                ArcGISRuntimeEnvironment.Initialize(config => config
-                  .UseLicense("nativelite,3000,rud4u0bartq2,none,JFBXJAY3MBHL6XCFK183")
-                  .UseApiKey("AAPTaOVICXgKxKU8X_KYWLQb1qA..4ykxWY31YoZBqcd37_3mg0fqBUbABzy5GokCf8k-FyLgnq5kDX-Nj0obwuyooZqZ8abeXJie87qHq4l1WPeOcGnk81nokWv3ljnKYFtugixC3ADCibqxTMyJ7ZCcRfwHRA1WLtl67eq_E9Hkvv0ot-W8nFkFs_qcJat8wodC50h0iOH7D49c2gYdcotkd5kMhp_Ay77hJ8dAu4z_0jkk_Kj_eXzc-w83ovZXHjdUjY3Ov90DGJKK7g..AT1_vLjO4233")
-                  .ConfigureAuthentication(auth => auth
-                     .UseDefaultChallengeHandler() // Use the default authentication dialog
-                  // .UseOAuthAuthorizeHandler(myOauthAuthorizationHandler) // Configure a custom OAuth dialog
-                   )
-                );
+                // Initialize the ArcGIS Maps SDK runtime before any components are created. The licence string and the
+                // API key come from arcgis.keys.json next to the program (ArcGisKeys)
+                ArcGisKeys keys = ArcGisKeys.Load();
+                ArcGISRuntimeEnvironment.Initialize(config =>
+                {
+                    if (keys.License != null)
+                        config.UseLicense(keys.License);
+                    if (keys.ApiKey != null)
+                        config.UseApiKey(keys.ApiKey);
+                    config.ConfigureAuthentication(auth => auth.UseDefaultChallengeHandler()); // default authentication dialog
+                });
                 // Enable support for TimestampOffset fields, which also changes behavior of Date fields.
                 // For more information see https://links.esri.com/DotNetDateTime
                 ArcGISRuntimeEnvironment.EnableTimestampOffsetSupport = true;
                 // Starts empty: the data is loaded from the window (Load Data menu)
                 new MainWindow(new mainProgram()).Show();
+                if (keys.Problem != null)
+                    MessageBox.Show("The map key is missing: " + keys.Problem + "\n\n" +
+                                    "Everything works except the map imagery. Install the program with the setup from the " +
+                                    "GitHub Releases page, or restore Projecte1(WPF)\\arcgis.keys.json from the repository " +
+                                    "and build again.",
+                                    "Map key missing", MessageBoxButton.OK, MessageBoxImage.Warning);
 
             }
             catch (Exception ex)

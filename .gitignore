@@ -363,3 +363,8 @@ MigrationBackup/
 FodyWeavers.xsd
 /.claude
 /CLAUDE.md
+
+
+# Installer build output (installer\build-installer.ps1)
+installer/publish/
+installer/output/

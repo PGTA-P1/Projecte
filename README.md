@@ -6,13 +6,19 @@ Workflow: load the files, compute the entries, calculate the demand, compare it 
 
 ![The Spanish ACCs on the 3D globe at 09:50 on 28/07/2016, coloured by load, with the sector list sorted by load](docs/images/main-3d.jpg)
 
-## Requirements
+## Install (recommended)
 
-- Windows 10 or 11
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0), or Visual Studio 2022 with the ".NET desktop development" workload
-- Internet: the first build downloads the NuGet packages (ArcGIS Maps SDK 300.1.0, NetTopologySuite 2.6.0), and the map's satellite imagery is streamed while the app runs
+1. Download **ProjecteP1-setup.exe** from the [Releases page](https://github.com/PGTA-P1/Projecte/releases/latest).
+2. Run it. The setup is not signed, so Windows may show "Windows protected your PC": click **More info > Run anyway**.
+3. Start **Projecte P1** from the Start menu.
 
-## Getting started
+It installs for your user only (no administrator rights), includes everything it needs (.NET and the map key) and can be removed from Windows Settings > Apps. It needs Windows 10 or 11 (64-bit) and an internet connection for the map imagery.
+
+The app opens with an empty globe. Choose **Load Data > Default data (Archives folder)**; about 10 seconds later the sectors, the timeline and the menus appear.
+
+## Building from source
+
+Needs the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0), or Visual Studio 2022 with the ".NET desktop development" workload. The first build downloads the NuGet packages (ArcGIS Maps SDK 300.1.0, NetTopologySuite 2.6.0).
 
 ```bash
 git clone https://github.com/PGTA-P1/Projecte.git
@@ -20,9 +26,11 @@ cd Projecte
 dotnet run --project "Projecte1(WPF)/Projecte1(WPF).csproj"
 ```
 
-Or open `Projecte 1.sln` in Visual Studio and press F5. The first build takes a while (package download); later ones take seconds.
+Or open `Projecte 1.sln` in Visual Studio and press F5.
 
-The app opens with an empty globe. Choose **Load Data > Default data (Archives folder)**; about 10 seconds later the sectors, the timeline and the menus appear.
+**Map key.** The ArcGIS licence string and API key (both free) are in `Projecte1(WPF)/arcgis.keys.json`, so a clone works as it is. To use your own, edit that file.
+
+**Installer.** `installer/build-installer.ps1` publishes the app with .NET included and builds `installer/output/ProjecteP1-setup.exe` with [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`).
 
 ## Using the app
 
@@ -105,6 +113,8 @@ Projecte1(WPF)/
   ArcGisMethods/   drawing on the ArcGIS map and globe
   Archives/        default data files
   Assets/, Fonts/  app logo and the Archivo font (SIL Open Font License)
+  arcgis.keys.json ArcGIS licence and API key (ArcGisKeys.cs reads it)
+installer/         Inno Setup script and build-installer.ps1
 docs/images/       the screenshots of this README
   MainWindow.xaml  main window; SectorPanel, ComparePanel, AnalysisWindow, DataFilesWindow
   mainProgram.cs   loading and entry computation
@@ -112,5 +122,5 @@ docs/images/       the screenshots of this README
 
 ## Troubleshooting
 
-- **The map stays grey or black:** no internet connection (the imagery is online).
+- **The map stays grey or black:** no internet connection (the imagery is online), or `arcgis.keys.json` is missing or its key has expired (the app warns at start-up when the file is missing).
 - **An export fails:** the file may be open in Excel; close it and export again.

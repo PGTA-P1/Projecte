@@ -26,6 +26,10 @@
 	    <None Update="Archives\**">
 		    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	    </None>
+	    <!-- ArcGIS licence and API key, next to the program (ArcGisKeys) -->
+	    <None Update="arcgis.keys.json">
+		    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	    </None>
     </ItemGroup>
     <!-- Archivo (SIL Open Font License, Fonts\OFL.txt): the UI font, embedded so it does not need installing -->
     <ItemGroup>
