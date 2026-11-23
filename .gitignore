@@ -368,3 +368,6 @@ FodyWeavers.xsd
 # Installer build output (installer\build-installer.ps1)
 installer/publish/
 installer/output/
+
+# Readable ArcGIS keys, local only (the repository has them scrambled in arcgis.keys.dat; installer\scramble-keys.ps1)
+arcgis.keys.json

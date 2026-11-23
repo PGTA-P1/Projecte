@@ -26,7 +26,11 @@
 	    <None Update="Archives\**">
 		    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	    </None>
-	    <!-- ArcGIS licence and API key, next to the program (ArcGisKeys) -->
+	    <!-- ArcGIS licence and API key next to the program (ArcGisKeys): scrambled (committed) and, if present, the
+	         readable local override (git-ignored; the installer leaves it out) -->
+	    <None Update="arcgis.keys.dat">
+		    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	    </None>
 	    <None Update="arcgis.keys.json">
 		    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	    </None>
