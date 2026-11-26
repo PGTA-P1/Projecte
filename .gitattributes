@@ -61,3 +61,9 @@
 #*.PDF   diff=astextplain
 #*.rtf   diff=astextplain
 #*.RTF   diff=astextplain
+
+###############################################################################
+# GitHub language statistics: the EUROCONTROL data files are not code. GitHub
+# reads .spc as PL/SQL and .sls as Scheme, so they are left out of the stats.
+###############################################################################
+Projecte1(WPF)/Archives/** linguist-vendored
