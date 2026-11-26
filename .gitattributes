@@ -64,6 +64,8 @@
 
 ###############################################################################
 # GitHub language statistics: the EUROCONTROL data files are not code. GitHub
-# reads .spc as PL/SQL and .sls as Scheme, so they are left out of the stats.
+# reads .spc as PL/SQL and .sls as Scheme, so they are left out of the stats
+# (by extension: a path pattern with the folder's parentheses did not match).
 ###############################################################################
-Projecte1(WPF)/Archives/** linguist-vendored
+*.spc linguist-detectable=false linguist-vendored
+*.sls linguist-detectable=false linguist-vendored
